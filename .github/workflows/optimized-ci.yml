@@ -1,0 +1,192 @@
+name: Optimized CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+# Optimize with caching and parallel jobs
+jobs:
+  # Fast linting check (runs first, fails fast)
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+      
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-lint-${{ hashFiles('**/requirements-dev.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-lint-
+      
+      - name: Install linting tools
+        run: |
+          pip install ruff black mypy
+      
+      - name: Run ruff
+        run: ruff check finite_memory_llm/ tests/
+      
+      - name: Run black check
+        run: black --check finite_memory_llm/ tests/
+      
+      - name: Run mypy
+        run: mypy finite_memory_llm/ --ignore-missing-imports
+        continue-on-error: true
+
+  # Fast unit tests (parallel with lint)
+  test-fast:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.10', '3.11', '3.12']
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: 'pip'
+      
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pip
+            ~/.cache/torch
+          key: ${{ runner.os }}-py${{ matrix.python-version }}-${{ hashFiles('**/requirements.txt', '**/requirements-dev.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-py${{ matrix.python-version }}-
+      
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -e .
+          pip install -r requirements-dev.txt
+      
+      - name: Run fast tests (core only)
+        run: |
+          pytest tests/test_finite_memory.py -v --tb=short -x
+      
+      - name: Upload coverage
+        if: matrix.python-version == '3.10'
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./coverage.xml
+          flags: unittests
+
+  # Comprehensive tests (runs after fast tests pass)
+  test-full:
+    needs: [lint, test-fast]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+      
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pip
+            ~/.cache/torch
+            ~/.cache/huggingface
+          key: ${{ runner.os }}-full-${{ hashFiles('**/requirements.txt', '**/requirements-dev.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-full-
+      
+      - name: Install all dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -e ".[all]"
+          pip install -r requirements-dev.txt
+      
+      - name: Run full test suite
+        run: |
+          pytest tests/ -v --cov=finite_memory_llm --cov-report=xml --cov-report=html
+      
+      - name: Generate coverage report
+        run: |
+          coverage report
+      
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: htmlcov/
+
+  # Build and package check
+  build:
+    needs: [lint, test-fast]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+      
+      - name: Install build tools
+        run: |
+          pip install build twine
+      
+      - name: Build package
+        run: |
+          python -m build
+      
+      - name: Check package
+        run: |
+          twine check dist/*
+      
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-packages
+          path: dist/
+
+  # Performance benchmarks (optional, runs on main only)
+  benchmark:
+    if: github.ref == 'refs/heads/main'
+    needs: [test-full]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+      
+      - name: Install dependencies
+        run: |
+          pip install -e .
+          pip install pytest-benchmark
+      
+      - name: Run benchmarks
+        run: |
+          pytest benchmarks/ --benchmark-only --benchmark-json=output.json
+        continue-on-error: true
+      
+      - name: Store benchmark result
+        uses: benchmark-action/github-action-benchmark@v1
+        with:
+          tool: 'pytest'
+          output-file-path: output.json
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          auto-push: true
