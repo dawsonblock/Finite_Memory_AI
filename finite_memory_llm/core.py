@@ -56,12 +56,112 @@ from collections.abc import Callable
 from dataclasses import dataclass, asdict
 from functools import wraps
 from pathlib import Path
-from typing import Any
+from typing import Any, Generator
 
 import numpy as np
 import torch
 
 warnings.filterwarnings("ignore")
+
+
+# ====================== TELEMETRY HOOKS ======================
+
+class TelemetryHook:
+    """Production telemetry hook for monitoring (v2.3+).
+    
+    Provides callbacks for key events to enable Prometheus,
+    StatsD, or custom monitoring integrations.
+    """
+    
+    def on_chat_start(self, message: str) -> None:
+        """Called when chat() starts."""
+        pass
+    
+    def on_chat_complete(self, stats: dict[str, Any], latency_ms: float) -> None:
+        """Called when chat() completes.
+        
+        Args:
+            stats: Dictionary of statistics
+            latency_ms: Total chat latency in milliseconds
+        """
+        pass
+    
+    def on_policy_execute(self, policy: str, latency_ms: float, tokens_before: int, tokens_after: int) -> None:
+        """Called after policy execution.
+        
+        Args:
+            policy: Policy name
+            latency_ms: Policy execution time
+            tokens_before: Tokens before eviction
+            tokens_after: Tokens after eviction
+        """
+        pass
+    
+    def on_cache_hit(self, prefix_len: int, delta_len: int) -> None:
+        """Called on KV-cache hit.
+        
+        Args:
+            prefix_len: Length of reused prefix
+            delta_len: Length of new tokens processed
+        """
+        pass
+    
+    def on_cache_miss(self, context_len: int) -> None:
+        """Called on KV-cache miss.
+        
+        Args:
+            context_len: Full context length processed
+        """
+        pass
+
+
+class PrometheusHook(TelemetryHook):
+    """Prometheus-compatible telemetry hook (v2.3+).
+    
+    Requires prometheus_client library.
+    """
+    
+    def __init__(self):
+        try:
+            from prometheus_client import Counter, Histogram, Gauge
+            
+            self.chat_total = Counter('finite_memory_chat_total', 'Total chat calls')
+            self.chat_latency = Histogram('finite_memory_chat_latency_seconds', 'Chat latency')
+            self.policy_latency = Histogram('finite_memory_policy_latency_seconds', 'Policy execution latency', ['policy'])
+            self.tokens_evicted = Counter('finite_memory_tokens_evicted_total', 'Total tokens evicted')
+            self.cache_hits = Counter('finite_memory_cache_hits_total', 'KV-cache hits')
+            self.cache_misses = Counter('finite_memory_cache_misses_total', 'KV-cache misses')
+            self.buffer_size = Gauge('finite_memory_buffer_size', 'Current token buffer size')
+            
+        except ImportError:
+            print("⚠ prometheus_client not installed, metrics disabled")
+    
+    def on_chat_complete(self, stats: dict[str, Any], latency_ms: float) -> None:
+        try:
+            self.chat_total.inc()
+            self.chat_latency.observe(latency_ms / 1000.0)
+            self.tokens_evicted.inc(stats.get('evictions', 0))
+            self.buffer_size.set(stats.get('tokens_retained', 0))
+        except Exception:
+            pass
+    
+    def on_policy_execute(self, policy: str, latency_ms: float, tokens_before: int, tokens_after: int) -> None:
+        try:
+            self.policy_latency.labels(policy=policy).observe(latency_ms / 1000.0)
+        except Exception:
+            pass
+    
+    def on_cache_hit(self, prefix_len: int, delta_len: int) -> None:
+        try:
+            self.cache_hits.inc()
+        except Exception:
+            pass
+    
+    def on_cache_miss(self, context_len: int) -> None:
+        try:
+            self.cache_misses.inc()
+        except Exception:
+            pass
 
 
 # ====================== DATA STRUCTURES ======================
@@ -627,6 +727,7 @@ class CompleteFiniteMemoryLLM:
         embedding_model: str | None = None,
         device: str = "cpu",
         max_policy_ms: float | None = None,
+        telemetry_hook: TelemetryHook | None = None,
     ) -> None:
         self.backend = backend
         self.max_tokens = max_tokens
@@ -636,6 +737,7 @@ class CompleteFiniteMemoryLLM:
         self.summary_interval = summary_interval
         self.device = device
         self.max_policy_ms = max_policy_ms
+        self.telemetry_hook = telemetry_hook
 
         # Embedding model for semantic clustering
         self.embedding_model = None
@@ -988,6 +1090,81 @@ class CompleteFiniteMemoryLLM:
         self.token_buffer.extend(new_tokens)
         return list(self.token_buffer)
 
+    # ---------- policy: hybrid (v2.3+) ----------
+
+    def _evict_hybrid(self, new_tokens: list[int]) -> list[int]:
+        """Hybrid policy combining importance and semantic clustering (v2.3+).
+        
+        Strategy:
+        1. Use importance scores to identify high-value tokens
+        2. Use semantic clustering to identify meaning-representative spans
+        3. Combine scores with weights: 60% importance, 40% semantic
+        4. Keep highest-scoring tokens + recent window
+        """
+        n_new = len(new_tokens)
+        cur_list = list(self.token_buffer)
+        
+        if len(cur_list) + n_new <= self.max_tokens:
+            self.token_buffer.extend(new_tokens)
+            return list(self.token_buffer)
+        
+        # Get importance scores
+        imp_scores = self._collect_last_token_importance(cur_list)
+        if imp_scores is None:
+            imp_scores = self._importance_via_logit_probes(cur_list, n_probes=6, span_size=32)
+        
+        # Get semantic scores
+        self._compute_span_embeddings(cur_list, span_size=64, stride=32)
+        sem_scores = np.zeros(len(cur_list))
+        
+        if len(self.token_embeddings) >= 2:
+            try:
+                from sklearn.cluster import KMeans
+                embs = np.vstack([e for _, _, e in self.token_embeddings])
+                k = min(self.semantic_clusters, len(self.token_embeddings))
+                km = KMeans(n_clusters=k, random_state=42, n_init=10)
+                labels = km.fit_predict(embs)
+                
+                # Assign scores based on cluster membership
+                for i, (s, e, _) in enumerate(self.token_embeddings):
+                    cid = labels[i]
+                    # Tokens in diverse clusters get higher scores
+                    cluster_count = np.sum(labels == cid)
+                    uniqueness = 1.0 / max(cluster_count, 1)
+                    for j in range(s, min(e, len(cur_list))):
+                        sem_scores[j] = uniqueness
+                
+                # Normalize
+                if sem_scores.max() > 0:
+                    sem_scores = sem_scores / sem_scores.max()
+            except Exception:
+                pass
+        
+        # Combine scores: 60% importance, 40% semantic
+        combined_scores = 0.6 * imp_scores[:len(cur_list)] + 0.4 * sem_scores
+        
+        # Keep target tokens
+        target = self.max_tokens - n_new
+        recency_budget = max(64, target // 4)
+        scored_budget = target - recency_budget
+        
+        # Select by combined score
+        keep = set()
+        if scored_budget > 0:
+            ranked = sorted(range(len(cur_list)), key=lambda i: combined_scores[i], reverse=True)
+            keep.update(ranked[:scored_budget])
+        
+        # Add recency
+        keep.update(range(max(0, len(cur_list) - recency_budget), len(cur_list)))
+        
+        new_buf = [cur_list[i] for i in sorted(keep)]
+        evicted = len(cur_list) - len(new_buf)
+        self.stats.evictions += max(evicted, 0)
+        
+        self.token_buffer = deque(new_buf, maxlen=self.max_tokens)
+        self.token_buffer.extend(new_tokens)
+        return list(self.token_buffer)
+
     # ---------- main interface ----------
 
     def _apply_policy(self, new_tokens: list[int]) -> list[int]:
@@ -1028,11 +1205,19 @@ class CompleteFiniteMemoryLLM:
             return self._evict_semantic(new_tokens)
         elif self.memory_policy == "rolling_summary":
             return self._evict_rolling_summary(new_tokens)
+        elif self.memory_policy == "hybrid":
+            return self._evict_hybrid(new_tokens)
         else:
             return self._evict_sliding(new_tokens)
 
     def chat(self, message: str, max_new_tokens: int = 50) -> dict[str, Any]:
         """Process a chat message and generate a response."""
+        start_time = time.perf_counter()
+        
+        # Telemetry: chat start
+        if self.telemetry_hook:
+            self.telemetry_hook.on_chat_start(message)
+        
         if not message or not message.strip():
             return {
                 "response": "",
@@ -1075,24 +1260,39 @@ class CompleteFiniteMemoryLLM:
             self.conversation_history.append({"role": "user", "content": message, "tokens": len(msg_tokens)})
             self.conversation_history.append({"role": "assistant", "content": response_text, "tokens": len(gen_ids)})
 
-            return {
+            result = {
                 "response": response_text,
                 "tokens_used": len(gen_ids),
                 "context_length": len(context_tokens),
                 "stats": self.stats,
                 "memory_policy": self.memory_policy,
             }
+            
+            # Telemetry: chat complete
+            if self.telemetry_hook:
+                latency_ms = (time.perf_counter() - start_time) * 1000
+                self.telemetry_hook.on_chat_complete(asdict(self.stats), latency_ms)
+            
+            return result
 
         except Exception as e:
             import traceback
             traceback.print_exc()
-            return {
+            
+            result = {
                 "response": f"Error: {str(e)}",
                 "tokens_used": 0,
                 "context_length": len(self.token_buffer),
                 "stats": self.stats,
                 "memory_policy": self.memory_policy,
             }
+            
+            # Telemetry: chat complete (error)
+            if self.telemetry_hook:
+                latency_ms = (time.perf_counter() - start_time) * 1000
+                self.telemetry_hook.on_chat_complete(asdict(self.stats), latency_ms)
+            
+            return result
 
     # ---------- checkpointing ----------
 

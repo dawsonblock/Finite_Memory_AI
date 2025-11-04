@@ -22,10 +22,12 @@ from .core import (
     HuggingFaceBackend,
     LLMBackend,
     MemoryStats,
+    PrometheusHook,
+    TelemetryHook,
     run_comprehensive_tests,
 )
 
-__version__ = "2.2.0"
+__version__ = "2.3.0"
 __all__ = [
     "APIChatBackend",
     "CompleteFiniteMemoryLLM",
@@ -33,6 +35,8 @@ __all__ = [
     "HuggingFaceBackend",
     "LLMBackend",
     "MemoryStats",
+    "PrometheusHook",
+    "TelemetryHook",
     "run_comprehensive_tests",
 ]
 
