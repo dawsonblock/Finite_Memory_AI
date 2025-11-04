@@ -55,18 +55,26 @@ class SummaryQAGate:
     
     def _extract_proper_names(self, text: str) -> Set[str]:
         """Extract capitalized words that might be proper names."""
-        # Simple heuristic: capitalized words not at sentence start
+        # Heuristic: capitalized words, excluding common sentence starters.
         words = text.split()
         names = set()
-        
+        common_starters = {"The", "A", "An", "In", "On", "At"}
+    
         for i, word in enumerate(words):
             # Remove punctuation
             clean = re.sub(r'[^\w\s]', '', word)
-            
-            # Check if capitalized and not at sentence start
+        
+            # Check if capitalized
             if clean and clean[0].isupper():
-                # Skip if it's the first word after punctuation
-                if i > 0 and not words[i-1].endswith(('.', '!', '?')):
+                # If it's the first word, only add if not a common starter
+                if i == 0:
+                    if clean not in common_starters:
+                        names.add(clean)
+                # If not the first word, add if it's not a common starter after punctuation
+                elif words[i-1].endswith(('.', '!', '?')):
+                    if clean not in common_starters:
+                        names.add(clean)
+                else: # It's a mid-sentence capitalized word, likely a name
                     names.add(clean)
         
         return names
