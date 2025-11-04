@@ -12,11 +12,13 @@ Compatible with asyncio, FastAPI, and other async frameworks.
 from __future__ import annotations
 
 import asyncio
-import time
 from abc import ABC, abstractmethod
-from typing import Any, AsyncGenerator
+from typing import TYPE_CHECKING, Any
 
 import torch
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncGenerator
 
 from .core import (
     CompleteFiniteMemoryLLM,
@@ -24,7 +26,6 @@ from .core import (
     LLMBackend,
     MemoryStats,
 )
-
 
 # ====================== ASYNC BACKEND INTERFACE ======================
 
@@ -67,7 +68,7 @@ class AsyncLLMBackend(ABC):
 
 class AsyncHuggingFaceBackend(AsyncLLMBackend):
     """Async wrapper for HuggingFace backend.
-    
+
     Runs blocking operations in thread pool to avoid blocking event loop.
     """
 
@@ -98,9 +99,7 @@ class AsyncHuggingFaceBackend(AsyncLLMBackend):
         loop = asyncio.get_event_loop()
 
         def _sync_gen():
-            return list(
-                self._sync_backend.generate_stream(input_ids, max_new_tokens, **kwargs)
-            )
+            return list(self._sync_backend.generate_stream(input_ids, max_new_tokens, **kwargs))
 
         tokens = await loop.run_in_executor(None, _sync_gen)
         for token_data in tokens:
@@ -130,7 +129,7 @@ class AsyncHuggingFaceBackend(AsyncLLMBackend):
 
 class AsyncAPIChatBackend(AsyncLLMBackend):
     """Async backend for hosted APIs.
-    
+
     Args:
         tokenizer: Any HF tokenizer for token counting
         send_callable_async: Async function (prompt: str, max_tokens: int) -> str
@@ -192,7 +191,7 @@ class AsyncAPIChatBackend(AsyncLLMBackend):
 
 class AsyncCompleteFiniteMemoryLLM:
     """Async version of CompleteFiniteMemoryLLM.
-    
+
     Provides async/await interface for non-blocking operations.
     Wraps sync implementation and runs blocking operations in thread pool.
     """
@@ -232,9 +231,7 @@ class AsyncCompleteFiniteMemoryLLM:
                 telemetry_hook=telemetry_hook,
             )
 
-    async def chat_async(
-        self, message: str, max_new_tokens: int = 50
-    ) -> dict[str, Any]:
+    async def chat_async(self, message: str, max_new_tokens: int = 50) -> dict[str, Any]:
         """Async chat interface."""
         if self._sync_llm:
             # Run sync chat in thread pool
@@ -250,7 +247,7 @@ class AsyncCompleteFiniteMemoryLLM:
         self, message: str, max_new_tokens: int = 50
     ) -> AsyncGenerator[dict[str, Any], None]:
         """Async streaming chat interface.
-        
+
         Yields:
             dict with 'token_id', 'token_text', 'is_final', and optionally 'stats'
         """
@@ -282,9 +279,7 @@ class AsyncCompleteFiniteMemoryLLM:
 
         # Stream generation
         if hasattr(self._sync_llm.backend, "generate_stream"):
-            for token_data in self._sync_llm.backend.generate_stream(
-                input_tensor, max_new_tokens
-            ):
+            for token_data in self._sync_llm.backend.generate_stream(input_tensor, max_new_tokens):
                 yield token_data
                 await asyncio.sleep(0)  # Yield control to event loop
         else:
@@ -301,9 +296,7 @@ class AsyncCompleteFiniteMemoryLLM:
         """Async checkpoint save."""
         if self._sync_llm:
             loop = asyncio.get_event_loop()
-            result = await loop.run_in_executor(
-                None, lambda: self._sync_llm.save_checkpoint(path)
-            )
+            result = await loop.run_in_executor(None, lambda: self._sync_llm.save_checkpoint(path))
             return str(result)
         raise NotImplementedError("Async backend checkpoint not implemented")
 
@@ -311,9 +304,7 @@ class AsyncCompleteFiniteMemoryLLM:
         """Async checkpoint load."""
         if self._sync_llm:
             loop = asyncio.get_event_loop()
-            return await loop.run_in_executor(
-                None, lambda: self._sync_llm.load_checkpoint(path)
-            )
+            return await loop.run_in_executor(None, lambda: self._sync_llm.load_checkpoint(path))
         raise NotImplementedError("Async backend checkpoint not implemented")
 
     def reset(self) -> None:
