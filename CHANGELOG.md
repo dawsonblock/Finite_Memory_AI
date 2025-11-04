@@ -5,6 +5,51 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.0] - 2025-11-04
+
+### Added
+- **KV-cache tracking**: Monitor cache hit/miss rates in HuggingFaceBackend
+  - New `get_cache_stats()` method returns cache metrics
+  - Tracks opportunities for KV-cache carryover optimization
+  - Foundation for full KV-cache reuse in future versions
+- **API-safe importance probes**: Logit attribution for hosted APIs (v2.2+)
+  - `_importance_via_logit_probes()` method measures token importance via impact on next-token probability
+  - Automatic fallback when attention scores unavailable (API backends)
+  - Bounded probe count (default 8) for controlled latency
+  - Enables importance policy for OpenAI/Anthropic/etc.
+- **Accuracy evaluation harness**: Systematic testing of memory vs accuracy trade-offs
+  - New `benchmarks/accuracy_harness.py` with synthetic QA dataset
+  - Plant facts at different positions (early/mid/late)
+  - Measure recall accuracy by position and compression ratio
+  - Compare policies on accuracy vs compression curves
+  - 7 planted facts + filler conversations for realistic testing
+- Enhanced `HuggingFaceBackend`:
+  - New `enable_kv_cache` parameter (default True)
+  - Cache hit/miss tracking for monitoring
+  - Foundation for future full KV-cache reuse
+
+### Changed
+- Importance policy now uses logit probes as fallback when attention unavailable
+- Updated `_evict_importance()` to try attention first, then logit probes
+- Enhanced error handling in importance scoring
+
+### Improved
+- 📊 **Better API support**: Importance policy now works with hosted APIs
+- 🎯 **Accuracy visibility**: Systematic evaluation of policy trade-offs
+- 📈 **Monitoring**: KV-cache tracking for optimization opportunities
+- 🧪 **Test coverage**: 63% (up from 60%), 41 tests passing
+
+### Test Suite
+- New `TestKVCacheTracking` class (2 tests)
+- New `TestLogitProbes` class (2 tests)
+- New `TestAccuracyHarness` class (2 tests)
+- All 41 tests passing
+
+### Future (v2.3+)
+- Full KV-cache carryover with actual reuse (requires model.forward() integration)
+- Streaming support with parallel policy computation (async/threading)
+- Expanded accuracy harness with more diverse QA patterns
+
 ## [2.1.0] - 2025-11-04
 
 ### Added

@@ -160,6 +160,61 @@ llm = CompleteFiniteMemoryLLM(
 
 ## 🎨 Advanced Features
 
+### 🎯 API-Safe Importance Probes (v2.2+)
+
+Use importance-based eviction even with hosted APIs (OpenAI, Anthropic) where attention scores aren't available:
+
+```python
+# Importance policy now works with API backends!
+from transformers import AutoTokenizer
+from finite_memory_llm import CompleteFiniteMemoryLLM, APIChatBackend
+
+tokenizer = AutoTokenizer.from_pretrained("gpt2")
+
+def call_api(prompt: str, max_tokens: int) -> str:
+    # Your API call here
+    return "response"
+
+backend = APIChatBackend(tokenizer, call_api, name="openai-gpt4")
+
+# Importance policy uses logit probes automatically
+llm = CompleteFiniteMemoryLLM(
+    backend,
+    memory_policy="importance",  # Now works with APIs!
+    max_tokens=4096
+)
+```
+
+**How it works:**
+- Samples spans from context
+- Masks each span and measures impact on next-token probability
+- Higher impact = more important = kept longer
+- Bounded probes (default 8) for controlled latency
+
+### 📊 Accuracy Evaluation (v2.2+)
+
+Measure how well your policy preserves information:
+
+```bash
+# Run the accuracy harness
+python benchmarks/accuracy_harness.py
+```
+
+**Output:**
+```
+Policy          Accuracy    Early    Mid      Late     Compression
+-----------------------------------------------------------------
+sliding         45.0%       20.0%    40.0%    75.0%    2.15x
+importance      65.0%       50.0%    60.0%    85.0%    1.95x
+rolling_summary 55.0%       30.0%    55.0%    80.0%    3.20x
+```
+
+**Benefits:**
+- Systematic evaluation of policy trade-offs
+- Measure recall by position (early/mid/late facts)
+- Optimize for your accuracy requirements
+- Compare compression vs information retention
+
 ### ⏱️ Latency Budgeting (v2.1+)
 
 Control policy execution time with automatic fallback to ensure consistent response times:

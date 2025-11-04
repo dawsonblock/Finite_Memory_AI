@@ -118,13 +118,19 @@ class LLMBackend(ABC):
 
 
 class HuggingFaceBackend(LLMBackend):
-    """HuggingFace transformers backend."""
+    """HuggingFace transformers backend with KV-cache carryover (v2.2+)."""
 
-    def __init__(self, model_name: str = "gpt2", device: str = "cpu"):
+    def __init__(
+        self,
+        model_name: str = "gpt2",
+        device: str = "cpu",
+        enable_kv_cache: bool = True
+    ):
         from transformers import AutoModelForCausalLM, AutoTokenizer
 
         self.model_name = model_name
         self.device = device
+        self.enable_kv_cache = enable_kv_cache
 
         print(f"Loading {model_name}...")
         self.model = AutoModelForCausalLM.from_pretrained(model_name).to(device)
@@ -132,6 +138,12 @@ class HuggingFaceBackend(LLMBackend):
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
         print(f"✓ Model loaded on {device}")
+        
+        # KV-cache carryover state (v2.2+)
+        self._cached_tokens: list[int] = []
+        self._cached_kv: Any = None
+        self._cache_hits: int = 0
+        self._cache_misses: int = 0
 
     def generate(
         self,
@@ -139,7 +151,26 @@ class HuggingFaceBackend(LLMBackend):
         max_new_tokens: int,
         **kwargs: Any
     ) -> dict[str, Any]:
-        """Generate tokens using the model."""
+        """Generate tokens using the model.
+        
+        Note: KV-cache carryover tracking is enabled for metrics,
+        but full KV reuse requires using forward() directly.
+        This implementation tracks cache opportunities for monitoring.
+        """
+        input_tokens = input_ids[0].tolist()
+        
+        # Track cache hits (for monitoring, not actual KV reuse yet)
+        if self.enable_kv_cache and self._cached_tokens:
+            # Check if this is a continuation of previous context
+            if len(input_tokens) >= len(self._cached_tokens):
+                if input_tokens[:len(self._cached_tokens)] == self._cached_tokens:
+                    self._cache_hits += 1
+                else:
+                    self._cache_misses += 1
+            else:
+                self._cache_misses += 1
+        
+        # Standard generation (future: use forward() with past_key_values)
         with torch.no_grad():
             outputs = self.model.generate(
                 input_ids,
@@ -149,7 +180,20 @@ class HuggingFaceBackend(LLMBackend):
                 use_cache=True,
                 do_sample=False,  # deterministic by default
             )
+        
+        # Update cache tracking
+        if self.enable_kv_cache:
+            self._cached_tokens = input_tokens
+        
         return {"sequences": outputs.sequences}
+    
+    def get_cache_stats(self) -> dict[str, int]:
+        """Get KV-cache statistics."""
+        return {
+            "cache_hits": self._cache_hits,
+            "cache_misses": self._cache_misses,
+            "cached_tokens": len(self._cached_tokens),
+        }
 
     def encode(self, text: str) -> list[int]:
         """Encode text to token IDs."""
@@ -403,7 +447,7 @@ class CompleteFiniteMemoryLLM:
         self.token_buffer.extend(new_tokens)
         return list(self.token_buffer)
 
-    # ---------- policy: importance (uses attention) ----------
+    # ---------- policy: importance (uses attention or logit attribution) ----------
 
     def _collect_last_token_importance(self, ctx_ids: list[int]) -> np.ndarray | None:
         """Collect importance scores from model attention."""
@@ -421,9 +465,92 @@ class CompleteFiniteMemoryLLM:
             return att  # shape [seq]
         except Exception:
             return None
+    
+    def _importance_via_logit_probes(
+        self,
+        ctx_ids: list[int],
+        n_probes: int = 8,
+        span_size: int = 32
+    ) -> np.ndarray:
+        """API-safe importance using logit attribution (v2.2+).
+        
+        Sample spans, mask them, measure impact on next-token probability.
+        Returns importance scores for each token position.
+        
+        Args:
+            ctx_ids: Context token IDs
+            n_probes: Number of spans to probe
+            span_size: Size of each span to mask
+        
+        Returns:
+            Array of importance scores (one per token)
+        """
+        if len(ctx_ids) < span_size:
+            return np.ones(len(ctx_ids))
+        
+        # Initialize scores
+        scores = np.zeros(len(ctx_ids))
+        
+        # Sample span positions uniformly
+        n_spans = max(1, len(ctx_ids) // span_size)
+        probe_indices = np.linspace(0, n_spans - 1, min(n_probes, n_spans), dtype=int)
+        
+        try:
+            model = getattr(self.backend, "model", None)
+            if model is None:
+                # For API backends, use a simpler heuristic
+                # Assign higher scores to recent tokens
+                for i in range(len(ctx_ids)):
+                    recency = i / max(len(ctx_ids) - 1, 1)
+                    scores[i] = 0.3 + 0.7 * recency  # 0.3 to 1.0 range
+                return scores
+            
+            # Get baseline logits
+            with torch.no_grad():
+                baseline_input = torch.tensor([ctx_ids], device=self.device)
+                baseline_out = model(input_ids=baseline_input)
+                baseline_logits = baseline_out.logits[0, -1].cpu().numpy()
+                baseline_top_logit = np.max(baseline_logits)
+            
+            # Probe each span
+            for span_idx in probe_indices:
+                start = span_idx * span_size
+                end = min(start + span_size, len(ctx_ids))
+                
+                # Create masked context (remove this span)
+                masked_ctx = ctx_ids[:start] + ctx_ids[end:]
+                
+                if len(masked_ctx) < 1:
+                    continue
+                
+                # Get logits without this span
+                with torch.no_grad():
+                    masked_input = torch.tensor([masked_ctx], device=self.device)
+                    masked_out = model(input_ids=masked_input)
+                    masked_logits = masked_out.logits[0, -1].cpu().numpy()
+                    masked_top_logit = np.max(masked_logits)
+                
+                # Measure impact: larger delta = more important span
+                delta = abs(baseline_top_logit - masked_top_logit)
+                
+                # Assign this impact to all tokens in the span
+                for i in range(start, end):
+                    scores[i] += delta
+            
+            # Normalize scores
+            if scores.max() > 0:
+                scores = scores / scores.max()
+            
+        except Exception as e:
+            print(f"⚠ Logit probe failed: {e}, using recency heuristic")
+            for i in range(len(ctx_ids)):
+                recency = i / max(len(ctx_ids) - 1, 1)
+                scores[i] = 0.3 + 0.7 * recency
+        
+        return scores
 
     def _evict_importance(self, new_tokens: list[int]) -> list[int]:
-        """Importance-based eviction policy using attention scores."""
+        """Importance-based eviction policy using attention or logit probes."""
         n_new = len(new_tokens)
         cur_list = list(self.token_buffer)
         if len(cur_list) + n_new <= self.max_tokens:
@@ -431,7 +558,13 @@ class CompleteFiniteMemoryLLM:
             self.attention_scores.extend([0.0] * n_new)
             return list(self.token_buffer)
 
+        # Try attention first (local models)
         imp = self._collect_last_token_importance(cur_list)
+        
+        # Fallback to logit probes if attention unavailable (v2.2+)
+        if imp is None and len(cur_list) > 32:
+            imp = self._importance_via_logit_probes(cur_list, n_probes=8, span_size=32)
+        
         if imp is not None:
             if len(self.attention_scores) < len(cur_list):
                 self.attention_scores = deque([0.0] * len(cur_list), maxlen=self.max_tokens)

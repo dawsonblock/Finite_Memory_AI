@@ -554,6 +554,100 @@ class TestEdgeCases:
         assert "response" in result
 
 
+class TestKVCacheTracking:
+    """Test KV-cache tracking (v2.2+)."""
+    
+    def test_kv_cache_enabled(self):
+        """Test that KV-cache tracking is enabled by default."""
+        from finite_memory_llm.core import HuggingFaceBackend
+        backend = HuggingFaceBackend("gpt2", device="cpu")
+        assert backend.enable_kv_cache == True
+    
+    def test_kv_cache_stats(self):
+        """Test KV-cache statistics tracking."""
+        from finite_memory_llm.core import HuggingFaceBackend
+        backend = HuggingFaceBackend("gpt2", device="cpu")
+        
+        stats = backend.get_cache_stats()
+        assert "cache_hits" in stats
+        assert "cache_misses" in stats
+        assert "cached_tokens" in stats
+        assert stats["cache_hits"] == 0
+        assert stats["cache_misses"] == 0
+
+
+class TestLogitProbes:
+    """Test API-safe importance probes (v2.2+)."""
+    
+    def test_logit_probes_basic(self, mock_backend):
+        """Test logit probes with mock backend."""
+        llm = CompleteFiniteMemoryLLM(
+            mock_backend,
+            max_tokens=512,
+            memory_policy="importance"
+        )
+        
+        # Add some tokens to buffer
+        llm.token_buffer.extend(list(range(100)))
+        
+        # Test logit probe method
+        scores = llm._importance_via_logit_probes(list(range(100)), n_probes=4, span_size=16)
+        
+        assert len(scores) == 100
+        assert all(0 <= s <= 1.0 for s in scores)  # Normalized scores
+    
+    def test_importance_with_logit_fallback(self, mock_backend):
+        """Test importance policy falls back to logit probes."""
+        llm = CompleteFiniteMemoryLLM(
+            mock_backend,
+            max_tokens=100,
+            memory_policy="importance"
+        )
+        
+        # Fill buffer beyond capacity
+        large_tokens = list(range(150))
+        result = llm._evict_importance(large_tokens)
+        
+        # Should have used some importance mechanism
+        assert len(result) <= 100
+
+
+class TestAccuracyHarness:
+    """Test accuracy evaluation harness (v2.2+)."""
+    
+    def test_harness_imports(self):
+        """Test that accuracy harness can be imported."""
+        try:
+            import sys
+            sys.path.insert(0, "benchmarks")
+            import accuracy_harness
+            assert hasattr(accuracy_harness, "evaluate_policy")
+            assert hasattr(accuracy_harness, "compare_policies")
+        except ImportError:
+            pytest.skip("Accuracy harness not available")
+    
+    def test_planted_fact_structure(self):
+        """Test PlantedFact dataclass structure."""
+        try:
+            import sys
+            sys.path.insert(0, "benchmarks")
+            from accuracy_harness import PlantedFact
+            
+            fact = PlantedFact(
+                position="early",
+                turn=1,
+                question="Test?",
+                answer="test",
+                context="This is a test."
+            )
+            
+            assert fact.position == "early"
+            assert fact.turn == 1
+            assert fact.answer == "test"
+        except ImportError:
+            pytest.skip("Accuracy harness not available")
+
+
 if __name__ == "__main__":
     # Run with pytest
     pytest.main([__file__, "-v"])
