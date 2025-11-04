@@ -81,26 +81,19 @@ class VectorMemory:
         metadata: Optional[dict] = None,
         confidence: float = 1.0
     ) -> str:
-        """Add item to vector memory.
-        
-        Args:
-            text: Text content
-            embedding: Dense embedding vector
-            item_id: Optional unique ID (auto-generated if not provided)
-            metadata: Optional metadata dict
-            confidence: Confidence score (0.0 to 1.0)
-        
-        Returns:
-            Item ID
-        """
+        """Add item to vector memory."""
         # Generate ID if not provided
         if item_id is None:
             item_id = f"item_{len(self._items)}_{int(time.time())}"
-        
+    
         # Check for duplicates
         if any(item.id == item_id for item in self._items):
             return item_id
-        
+    
+        # Validate embedding shape
+        if not isinstance(embedding, np.ndarray) or embedding.ndim != 1 or embedding.shape[0] != self.dimension:
+            raise ValueError(f"Embedding must be 1-D with length {self.dimension}, got shape {getattr(embedding, 'shape', None)}")
+    
         # Create item
         item = VectorItem(
             id=item_id,
@@ -110,23 +103,37 @@ class VectorMemory:
             metadata=metadata or {},
             confidence=confidence
         )
-        
-        # Add to FAISS
+    
+        # Prepare embedding for FAISS
         emb = embedding.reshape(1, -1).astype(np.float32)
+    
+        # If IVF index, ensure it is trained before adding
+        if hasattr(self.index, "is_trained") and not self.index.is_trained:
+            # Train with current buffer plus this embedding if available
+            if self._items:
+                train_mat = np.vstack([it.embedding for it in self._items] + [embedding]).astype(np.float32)
+                self.index.train(train_mat)
+            else:
+                # Need at least some data to train; use this single vector (FAISS may still require >= nlist)
+                self.index.train(emb)
+    
+        # Add to FAISS
         self.index.add(emb)
-        
+    
         # Store metadata
         self._items.append(item)
-        
+    
         # Evict oldest if over limit
         if len(self._items) > self.max_items:
             # Remove oldest (FIFO)
             self._items.pop(0)
-    
             # Rebuild the index to keep it in sync with _items
             self.index.reset()
             if self._items:
-                embeddings_to_readd = np.vstack([item.embedding for item in self._items]).astype(np.float32)
+                embeddings_to_readd = np.vstack([it.embedding for it in self._items]).astype(np.float32)
+                # Retrain IVF if needed after reset
+                if hasattr(self.index, "is_trained") and not self.index.is_trained:
+                    self.index.train(embeddings_to_readd)
                 self.index.add(embeddings_to_readd)
         
         return item_id
