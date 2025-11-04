@@ -95,11 +95,11 @@ class Metrics:
         
         # Update cumulative
         self.total_turns += 1
-        self.total_tokens_seen = stats.tokens_seen
-        self.total_tokens_retained = stats.tokens_retained
-        self.total_evictions = stats.evictions
-        self.total_fallbacks = stats.fallback_count
-        
+        self.total_tokens_seen += stats.tokens_seen
+        self.total_tokens_retained += stats.tokens_retained
+        self.total_evictions += stats.evictions
+        self.total_fallbacks += stats.fallback_count
+
         if cache_hit:
             self.total_cache_hits += 1
         else:
