@@ -5,6 +5,9 @@ Modern Python 3.10+ implementation with:
 - Finite memory with multiple eviction policies
 - Context distillation for efficient prompting
 - Support for both local and hosted language models
+- Async/await support for non-blocking operations
+- Multi-language support with adaptive policies
+- 7+ additional API backends
 
 Quick start:
     >>> from finite_memory_llm import CompleteFiniteMemoryLLM, HuggingFaceBackend
@@ -27,8 +30,63 @@ from .core import (
     run_comprehensive_tests,
 )
 
-__version__ = "2.3.0"
+# Optional imports with graceful degradation
+try:
+    from .async_core import (
+        AsyncCompleteFiniteMemoryLLM,
+        AsyncHuggingFaceBackend,
+        AsyncAPIChatBackend,
+        AsyncLLMBackend,
+    )
+    _ASYNC_AVAILABLE = True
+except ImportError:
+    _ASYNC_AVAILABLE = False
+    AsyncCompleteFiniteMemoryLLM = None
+    AsyncHuggingFaceBackend = None
+    AsyncAPIChatBackend = None
+    AsyncLLMBackend = None
+
+try:
+    from .multilingual import (
+        LanguageDetector,
+        LanguageInfo,
+        MultilingualTokenizer,
+        MultilingualMemoryPolicy,
+        TranslationBridge,
+    )
+    _MULTILINGUAL_AVAILABLE = True
+except ImportError:
+    _MULTILINGUAL_AVAILABLE = False
+    LanguageDetector = None
+    LanguageInfo = None
+    MultilingualTokenizer = None
+    MultilingualMemoryPolicy = None
+    TranslationBridge = None
+
+try:
+    from .backends import (
+        CohereBackend,
+        AI21Backend,
+        AnthropicBackend,
+        GoogleBackend,
+        HuggingFaceInferenceBackend,
+        TogetherBackend,
+        ReplicateBackend,
+    )
+    _BACKENDS_AVAILABLE = True
+except ImportError:
+    _BACKENDS_AVAILABLE = False
+    CohereBackend = None
+    AI21Backend = None
+    AnthropicBackend = None
+    GoogleBackend = None
+    HuggingFaceInferenceBackend = None
+    TogetherBackend = None
+    ReplicateBackend = None
+
+__version__ = "2.4.0"
 __all__ = [
+    # Core
     "APIChatBackend",
     "CompleteFiniteMemoryLLM",
     "ContextBuilder",
@@ -38,5 +96,24 @@ __all__ = [
     "PrometheusHook",
     "TelemetryHook",
     "run_comprehensive_tests",
+    # Async (optional)
+    "AsyncCompleteFiniteMemoryLLM",
+    "AsyncHuggingFaceBackend",
+    "AsyncAPIChatBackend",
+    "AsyncLLMBackend",
+    # Multilingual (optional)
+    "LanguageDetector",
+    "LanguageInfo",
+    "MultilingualTokenizer",
+    "MultilingualMemoryPolicy",
+    "TranslationBridge",
+    # Additional Backends (optional)
+    "CohereBackend",
+    "AI21Backend",
+    "AnthropicBackend",
+    "GoogleBackend",
+    "HuggingFaceInferenceBackend",
+    "TogetherBackend",
+    "ReplicateBackend",
 ]
 
