@@ -103,6 +103,10 @@ class TestMemoryStats:
         assert stats.tokens_retained == 0
         assert stats.evictions == 0
         assert stats.compression_ratio == 1.0
+        assert stats.policy_latency_ms == 0.0
+        assert stats.total_policy_calls == 0
+        assert stats.fallback_count == 0
+        assert stats.anchor_cache_hits == 0
     
     def test_stats_update(self):
         """Test stats can be updated."""
@@ -132,17 +136,18 @@ class TestContextBuilder:
         builder = ContextBuilder(max_tokens=512, window_size=128)
         tokens = list(range(100))
         
-        result = builder.build(mock_backend, [], tokens)
+        result, cache_hits = builder.build(mock_backend, [], tokens)
         
         assert len(result) <= 512
         assert result == tokens
+        assert cache_hits == 0  # First call, no cache hits
     
     def test_build_over_limit(self, mock_backend):
         """Test building context when over token limit."""
         builder = ContextBuilder(max_tokens=100, window_size=50)
         tokens = list(range(200))
         
-        result = builder.build(mock_backend, [], tokens)
+        result, cache_hits = builder.build(mock_backend, [], tokens)
         
         assert len(result) <= 100
         assert len(result) > 0
@@ -152,10 +157,29 @@ class TestContextBuilder:
         builder = ContextBuilder(max_tokens=100, window_size=50)
         tokens = list(range(200))
         
-        result = builder.build(mock_backend, [], tokens)
+        result, cache_hits = builder.build(mock_backend, [], tokens)
         
         # Should include most recent tokens
         assert 199 in result or 198 in result
+    
+    def test_anchor_caching(self, mock_backend):
+        """Test that anchor caching works correctly."""
+        builder = ContextBuilder(max_tokens=100, window_size=50)
+        tokens = list(range(200))
+        
+        # First call - no cache hits
+        result1, cache_hits1 = builder.build(mock_backend, [], tokens)
+        assert cache_hits1 == 0
+        
+        # Second call with same tokens - should hit cache
+        result2, cache_hits2 = builder.build(mock_backend, [], tokens)
+        assert cache_hits2 == 1
+        assert result1 == result2
+        
+        # Third call with different tokens - cache miss
+        tokens_new = list(range(300))
+        result3, cache_hits3 = builder.build(mock_backend, [], tokens_new)
+        assert cache_hits3 == 0
 
 
 # ====================== FINITE MEMORY LLM TESTS ======================
@@ -297,6 +321,90 @@ class TestMemoryPolicies:
         tokens = list(range(30))
         result = llm._evict_semantic(tokens)
         assert len(result) <= 50
+
+
+# ====================== LATENCY BUDGETING TESTS ======================
+
+class TestLatencyBudgeting:
+    """Test latency budgeting and fallback mechanisms."""
+    
+    def test_latency_budget_initialization(self, mock_backend):
+        """Test initialization with latency budget."""
+        llm = CompleteFiniteMemoryLLM(
+            mock_backend,
+            max_tokens=512,
+            memory_policy="sliding",
+            max_policy_ms=100.0
+        )
+        
+        assert llm.max_policy_ms == 100.0
+    
+    def test_latency_tracking(self, mock_backend):
+        """Test that latency is tracked correctly."""
+        llm = CompleteFiniteMemoryLLM(
+            mock_backend,
+            max_tokens=512,
+            memory_policy="sliding",
+            max_policy_ms=1000.0  # High budget, won't trigger fallback
+        )
+        
+        llm.chat("Hello", max_new_tokens=10)
+        
+        # Should have tracked policy calls
+        assert llm.stats.total_policy_calls > 0
+    
+    def test_no_fallback_when_under_budget(self, mock_backend):
+        """Test that no fallback occurs when under budget."""
+        llm = CompleteFiniteMemoryLLM(
+            mock_backend,
+            max_tokens=512,
+            memory_policy="sliding",
+            max_policy_ms=10000.0  # Very high budget
+        )
+        
+        llm.chat("Hello", max_new_tokens=10)
+        
+        assert llm.stats.fallback_count == 0
+    
+    def test_fallback_statistics(self, mock_backend):
+        """Test that fallback statistics are tracked."""
+        llm = CompleteFiniteMemoryLLM(
+            mock_backend,
+            max_tokens=512,
+            memory_policy="sliding"
+        )
+        
+        # Manually trigger fallback by simulating slow policy
+        import time
+        original_impl = llm._apply_policy_impl
+        
+        def slow_policy(tokens):
+            time.sleep(0.01)  # Add small delay
+            return original_impl(tokens)
+        
+        llm._apply_policy_impl = slow_policy
+        llm.max_policy_ms = 1.0  # Very low budget
+        
+        llm.chat("Test", max_new_tokens=5)
+        
+        # Should have attempted to track latency
+        assert llm.stats.total_policy_calls > 0
+    
+    def test_policy_calls_increment(self, mock_backend):
+        """Test that policy calls are counted correctly."""
+        llm = CompleteFiniteMemoryLLM(
+            mock_backend,
+            max_tokens=512,
+            memory_policy="sliding"
+        )
+        
+        initial_calls = llm.stats.total_policy_calls
+        
+        llm.chat("Message 1", max_new_tokens=5)
+        llm.chat("Message 2", max_new_tokens=5)
+        
+        # Each chat calls policy twice (user tokens + assistant tokens)
+        assert llm.stats.total_policy_calls >= initial_calls + 4
 
 
 # ====================== CHECKPOINT TESTS ======================

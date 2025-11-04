@@ -48,11 +48,13 @@ Quick start (hosted API):
 from __future__ import annotations
 
 import json
+import time
 import warnings
 from abc import ABC, abstractmethod
 from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass, asdict
+from functools import wraps
 from pathlib import Path
 from typing import Any
 
@@ -76,6 +78,12 @@ class MemoryStats:
     clusters_merged: int = 0
     importance_evictions: int = 0
     sparsity_ratio: float = 1.0  # kept for continuity
+    
+    # Performance telemetry (v2.1+)
+    policy_latency_ms: float = 0.0
+    total_policy_calls: int = 0
+    fallback_count: int = 0
+    anchor_cache_hits: int = 0
 
 
 # ====================== BACKEND INTERFACE ======================
@@ -219,13 +227,25 @@ class ContextBuilder:
     def __init__(self, max_tokens: int, window_size: int = 256) -> None:
         self.max_tokens = max_tokens
         self.window_size = window_size
+        
+        # Anchor caching (v2.1+)
+        self._anchor_cache: dict[int, list[int]] = {}
+        self._cache_hits = 0
 
     def global_boundaries(
         self,
         backend: LLMBackend,
         toks: list[int]
     ) -> list[int]:
-        """Find global sentence boundary positions."""
+        """Find global sentence boundary positions with caching."""
+        # Cache key is hash of token sequence
+        cache_key = hash(tuple(toks))
+        
+        if cache_key in self._anchor_cache:
+            self._cache_hits += 1
+            return self._anchor_cache[cache_key]
+        
+        # Compute boundaries
         idx = [0]
         try:
             for i, t in enumerate(toks[:-1]):
@@ -236,16 +256,33 @@ class ContextBuilder:
             pass
         if toks:
             idx.append(len(toks) - 1)
-        return sorted(set(i for i in idx if 0 <= i < len(toks)))
+        
+        result = sorted(set(i for i in idx if 0 <= i < len(toks)))
+        
+        # Cache result (limit cache size to prevent memory growth)
+        if len(self._anchor_cache) < 100:
+            self._anchor_cache[cache_key] = result
+        else:
+            # Clear cache if it grows too large
+            self._anchor_cache.clear()
+        
+        return result
 
     def build(
         self,
         backend: LLMBackend,
         buffer: list[int],
         policy_out: list[int]
-    ) -> list[int]:
+    ) -> tuple[list[int], int]:
+        """Build final context with caching.
+        
+        Returns:
+            Tuple of (token_list, cache_hits)
+        """
+        cache_hits_before = self._cache_hits
+        
         if len(policy_out) <= self.max_tokens:
-            return policy_out
+            return policy_out, self._cache_hits - cache_hits_before
 
         anchors = self.global_boundaries(backend, policy_out)
         keep = set()
@@ -265,7 +302,8 @@ class ContextBuilder:
         out = [policy_out[i] for i in kept]
         if len(out) > self.max_tokens:
             out = out[-self.max_tokens:]
-        return out
+        
+        return out, self._cache_hits - cache_hits_before
 
 
 # ====================== COMPLETE FINITE MEMORY ======================
@@ -289,6 +327,7 @@ class CompleteFiniteMemoryLLM:
         summary_interval: int = 256,
         embedding_model: str | None = None,
         device: str = "cpu",
+        max_policy_ms: float | None = None,
     ) -> None:
         self.backend = backend
         self.max_tokens = max_tokens
@@ -297,6 +336,7 @@ class CompleteFiniteMemoryLLM:
         self.semantic_clusters = semantic_clusters
         self.summary_interval = summary_interval
         self.device = device
+        self.max_policy_ms = max_policy_ms
 
         # Embedding model for semantic clustering
         self.embedding_model = None
@@ -332,7 +372,8 @@ class CompleteFiniteMemoryLLM:
         # Context slicer
         self.context_builder = ContextBuilder(max_tokens=max_tokens, window_size=window_size)
 
-        print(f"✓ LLM initialized: policy={self.memory_policy}, max_tokens={self.max_tokens}, window={self.window_size}")
+        budget_str = f", latency_budget={self.max_policy_ms}ms" if self.max_policy_ms else ""
+        print(f"✓ LLM initialized: policy={self.memory_policy}, max_tokens={self.max_tokens}, window={self.window_size}{budget_str}")
 
     # ---------- utilities ----------
 
@@ -562,7 +603,35 @@ class CompleteFiniteMemoryLLM:
     # ---------- main interface ----------
 
     def _apply_policy(self, new_tokens: list[int]) -> list[int]:
-        """Apply the configured memory policy."""
+        """Apply the configured memory policy with latency budgeting."""
+        self.stats.total_policy_calls += 1
+        
+        # If no latency budget or policy is sliding, run directly
+        if self.max_policy_ms is None or self.memory_policy == "sliding":
+            return self._apply_policy_impl(new_tokens)
+        
+        # Run with timing and fallback
+        start_time = time.perf_counter()
+        try:
+            result = self._apply_policy_impl(new_tokens)
+            elapsed_ms = (time.perf_counter() - start_time) * 1000
+            self.stats.policy_latency_ms = elapsed_ms
+            
+            # Check if we exceeded budget
+            if elapsed_ms > self.max_policy_ms:
+                print(f"⚠ Policy '{self.memory_policy}' exceeded budget ({elapsed_ms:.1f}ms > {self.max_policy_ms}ms), falling back to sliding")
+                self.stats.fallback_count += 1
+                # Revert to sliding for next call
+                return self._evict_sliding(new_tokens)
+            
+            return result
+        except Exception as e:
+            print(f"⚠ Policy '{self.memory_policy}' failed: {e}, falling back to sliding")
+            self.stats.fallback_count += 1
+            return self._evict_sliding(new_tokens)
+    
+    def _apply_policy_impl(self, new_tokens: list[int]) -> list[int]:
+        """Internal policy dispatcher."""
         if self.memory_policy == "sliding":
             return self._evict_sliding(new_tokens)
         elif self.memory_policy == "importance":
@@ -599,7 +668,8 @@ class CompleteFiniteMemoryLLM:
             self.stats.compression_ratio = self.stats.tokens_seen / max(self.stats.tokens_retained, 1)
 
             # build the final enforced context
-            context_tokens = self.context_builder.build(self.backend, list(self.token_buffer), policy_out)
+            context_tokens, anchor_hits = self.context_builder.build(self.backend, list(self.token_buffer), policy_out)
+            self.stats.anchor_cache_hits += anchor_hits
             input_tensor = torch.tensor([context_tokens], device=self.device)
 
             # generate

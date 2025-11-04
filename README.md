@@ -160,6 +160,39 @@ llm = CompleteFiniteMemoryLLM(
 
 ## 🎨 Advanced Features
 
+### ⏱️ Latency Budgeting (v2.1+)
+
+Control policy execution time with automatic fallback to ensure consistent response times:
+
+```python
+llm = CompleteFiniteMemoryLLM(
+    backend,
+    memory_policy="semantic",  # Can be slow for large contexts
+    max_policy_ms=50.0,        # Maximum 50ms for policy execution
+    max_tokens=2048
+)
+
+# If semantic policy exceeds 50ms, automatically falls back to sliding
+result = llm.chat("Long message...")
+
+# Check if fallback occurred
+print(f"Policy latency: {result['stats'].policy_latency_ms:.1f}ms")
+print(f"Fallback count: {result['stats'].fallback_count}")
+print(f"Total policy calls: {result['stats'].total_policy_calls}")
+```
+
+**Benefits:**
+- 🎯 **Predictable latency**: Never let policy overhead ruin user experience
+- 🔄 **Automatic fallback**: Gracefully degrades to sliding window when budget exceeded
+- 📊 **Telemetry**: Track policy performance and fallback frequency
+- ⚡ **Production-ready**: Essential for real-time applications
+
+**Recommended budgets:**
+- `10ms` - Ultra-low latency (real-time chat)
+- `50ms` - Standard web applications
+- `200ms` - Batch processing with quality focus
+- `None` - No limit (benchmark/development)
+
 ### Checkpointing - Save & Resume Conversations
 
 ```python
@@ -189,6 +222,8 @@ print(f"Tokens seen: {stats.tokens_seen}")
 print(f"Tokens retained: {stats.tokens_retained}")
 print(f"Compression ratio: {stats.compression_ratio:.2f}x")
 print(f"Evictions: {stats.evictions}")
+print(f"Policy latency: {stats.policy_latency_ms:.1f}ms")
+print(f"Anchor cache hits: {stats.anchor_cache_hits}")
 ```
 
 ## 🏗️ Architecture
