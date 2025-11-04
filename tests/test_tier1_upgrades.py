@@ -3,7 +3,6 @@
 import pytest
 import numpy as np
 import time
-from pathlib import Path
 
 # Test latency_guard
 def test_latency_guard_basic():
