@@ -1327,10 +1327,13 @@ class CompleteFiniteMemoryLLM:
         
         # Use Tier-1 guarded_call if available
         if guarded_call:
+            def _fallback_with_count():
+                self.stats.fallback_count += 1
+                return self._evict_sliding(new_tokens)
             result = guarded_call(
                 func=lambda: self._apply_policy_impl(new_tokens),
                 budget_ms=self.max_policy_ms,
-                fallback=lambda: self._evict_sliding(new_tokens)
+                fallback=_fallback_with_count
             )
             return result
         
