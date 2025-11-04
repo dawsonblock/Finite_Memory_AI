@@ -63,6 +63,29 @@ import torch
 
 warnings.filterwarnings("ignore")
 
+# Tier-1 upgrade imports (optional, graceful degradation)
+try:
+    from .upgrades.latency_guard import guarded_call, timed_call
+    from .upgrades.embed_cache import SpanEmbedder
+    from .upgrades.summary_qa_gate import SummaryQAGate
+    from .upgrades.knapsack import choose_under_budget, partition_budget
+    from .upgrades.block_sparse import build_block_sparse_mask, export_longformer_mask
+    from .telemetry.metrics import Metrics
+    from .telemetry.turn_debug_dump import TurnDumper
+    _UPGRADES_AVAILABLE = True
+except ImportError as e:
+    _UPGRADES_AVAILABLE = False
+    guarded_call = None
+    timed_call = None
+    SpanEmbedder = None
+    SummaryQAGate = None
+    choose_under_budget = None
+    partition_budget = None
+    Metrics = None
+    TurnDumper = None
+    build_block_sparse_mask = None
+    export_longformer_mask = None
+
 
 # ====================== TELEMETRY HOOKS ======================
 
@@ -739,9 +762,38 @@ class CompleteFiniteMemoryLLM:
         self.max_policy_ms = max_policy_ms
         self.telemetry_hook = telemetry_hook
 
-        # Embedding model for semantic clustering
+        # Tier-1 upgrades (if available)
+        self._span_embedder = None
+        self._qa_gate = None
+        self._use_upgrades = _UPGRADES_AVAILABLE
+        
+        if _UPGRADES_AVAILABLE:
+            # Initialize embedding cache with MiniBatchKMeans
+            if memory_policy in ("semantic", "hybrid"):
+                try:
+                    emb_name = embedding_model or "sentence-transformers/all-MiniLM-L6-v2"
+                    print(f"Initializing Tier-1 SpanEmbedder with {emb_name}...")
+                    self._span_embedder = SpanEmbedder(model_name=emb_name, cache_size=1000)
+                    print("✓ Tier-1 embedding cache enabled")
+                except Exception as e:
+                    print(f"⚠ Could not initialize SpanEmbedder: {e}")
+                    self._use_upgrades = False
+            
+            # Initialize summary QA gate
+            if memory_policy == "rolling_summary":
+                self._qa_gate = SummaryQAGate(
+                    questions=[
+                        "List specific numbers/dates.",
+                        "List proper names/aliases.",
+                        "List key facts as key:value.",
+                    ],
+                    threshold=0.75
+                )
+                print("✓ Tier-1 summary QA gate enabled")
+        
+        # Embedding model for semantic clustering (legacy path)
         self.embedding_model = None
-        if memory_policy == "semantic":
+        if memory_policy == "semantic" and not self._span_embedder:
             try:
                 from sentence_transformers import SentenceTransformer
                 emb_name = embedding_model or "sentence-transformers/all-MiniLM-L6-v2"
@@ -774,7 +826,8 @@ class CompleteFiniteMemoryLLM:
         self.context_builder = ContextBuilder(max_tokens=max_tokens, window_size=window_size)
 
         budget_str = f", latency_budget={self.max_policy_ms}ms" if self.max_policy_ms else ""
-        print(f"✓ LLM initialized: policy={self.memory_policy}, max_tokens={self.max_tokens}, window={self.window_size}{budget_str}")
+        upgrade_str = " (Tier-1 enabled)" if self._use_upgrades else ""
+        print(f"✓ LLM initialized: policy={self.memory_policy}, max_tokens={self.max_tokens}, window={self.window_size}{budget_str}{upgrade_str}")
 
     # ---------- utilities ----------
 
@@ -958,7 +1011,42 @@ class CompleteFiniteMemoryLLM:
         span_size: int = 64,
         stride: int = 32
     ) -> None:
-        """Compute embeddings for token spans."""
+        """Compute embeddings for token spans (Tier-1 enhanced)."""
+        # Use Tier-1 cached embedder if available
+        if self._span_embedder and tokens:
+            self.token_embeddings.clear()
+            self.span_texts.clear()
+            
+            # Create spans
+            spans = []
+            texts = []
+            for i in range(0, len(tokens), stride):
+                end = min(i + span_size, len(tokens))
+                span = tokens[i:end]
+                if span:
+                    try:
+                        text = self.backend.decode(span)
+                        if text.strip():
+                            spans.append(span)
+                            texts.append(text)
+                            self.token_embeddings.append((i, end, None))  # Placeholder
+                            self.span_texts.append(text)
+                    except Exception:
+                        continue
+            
+            # Batch encode with cache
+            if spans:
+                try:
+                    embeddings = self._span_embedder.encode_spans(spans, texts)
+                    # Update embeddings in token_embeddings
+                    for idx, emb in enumerate(embeddings):
+                        i, end, _ = self.token_embeddings[idx]
+                        self.token_embeddings[idx] = (i, end, emb)
+                except Exception as e:
+                    print(f"⚠ Span embedding failed: {e}")
+            return
+        
+        # Legacy path
         if not self.embedding_model or not tokens:
             return
         self.token_embeddings.clear()
@@ -978,13 +1066,66 @@ class CompleteFiniteMemoryLLM:
                 continue
 
     def _evict_semantic(self, new_tokens: list[int]) -> list[int]:
-        """Semantic clustering eviction policy."""
+        """Semantic clustering eviction policy (Tier-1 enhanced)."""
         n_new = len(new_tokens)
         cur = list(self.token_buffer)
         if len(cur) + n_new <= self.max_tokens:
             self.token_buffer.extend(new_tokens)
             return list(self.token_buffer)
 
+        # Use Tier-1 cached embedder with MiniBatchKMeans
+        if self._span_embedder:
+            self._compute_span_embeddings(cur, span_size=64, stride=32)
+            if len(self.token_embeddings) < max(2, self.semantic_clusters * 2):
+                return self._evict_sliding(new_tokens)
+            
+            try:
+                embs = np.vstack([e for _, _, e in self.token_embeddings])
+                # Use MiniBatchKMeans via SpanEmbedder
+                keep_span_indices = self._span_embedder.select_representatives(
+                    embs, 
+                    k=self.semantic_clusters,
+                    recency_bias=0.15
+                )
+                
+                # Add recency spans
+                recency_threshold = len(cur) - (self.max_tokens // 4)
+                for i, (s, _, _) in enumerate(self.token_embeddings):
+                    if s >= recency_threshold and i not in keep_span_indices:
+                        keep_span_indices.append(i)
+                
+                keep_span_indices = sorted(set(keep_span_indices))
+                
+                # Apply knapsack selection if available
+                if choose_under_budget:
+                    budget = self.max_tokens - n_new
+                    items = [
+                        (i, s, e, float(e - s))
+                        for i, (s, e, _) in enumerate(self.token_embeddings)
+                        if i in keep_span_indices
+                    ]
+                    keep_span_indices = choose_under_budget(items, budget)
+                
+                new_buf = []
+                for span_idx in sorted(keep_span_indices):
+                    s, e, _ = self.token_embeddings[span_idx]
+                    s = max(0, min(s, len(cur)))
+                    e = max(s, min(e, len(cur)))
+                    new_buf.extend(cur[s:e])
+                
+                merged = len(self.token_embeddings) - len(keep_span_indices)
+                self.stats.evictions += max(0, len(cur) - len(new_buf))
+                self.stats.clusters_merged += max(0, merged)
+                
+                self.token_buffer = deque(new_buf, maxlen=self.max_tokens)
+                self.token_buffer.extend(new_tokens)
+                return list(self.token_buffer)
+            
+            except Exception as e:
+                print(f"⚠ Tier-1 semantic clustering failed: {e}. Falling back to sliding.")
+                return self._evict_sliding(new_tokens)
+        
+        # Legacy path
         if not self.embedding_model:
             return self._evict_sliding(new_tokens)
 
@@ -1043,7 +1184,7 @@ class CompleteFiniteMemoryLLM:
         tokens: list[int],
         max_summary_tokens: int = 128
     ) -> list[int]:
-        """Create a summary of token sequence."""
+        """Create a summary of token sequence (Tier-1 QA gate)."""
         if not tokens:
             return []
         try:
@@ -1051,6 +1192,15 @@ class CompleteFiniteMemoryLLM:
             # naive extractive summary: first sentence or first 200 chars
             sentence = text.split(".")[0]
             summary_text = sentence[:200] if sentence else text[:200]
+            
+            # Apply QA gate if available
+            if self._qa_gate:
+                verified = self._qa_gate.verify(pre_text=text, post_summary=summary_text)
+                if not verified:
+                    print("⚠ Summary failed QA gate, using fallback")
+                    # Fallback: use first N tokens directly
+                    summary_text = text[:max_summary_tokens * 4]  # Rough char estimate
+            
             ids = self.backend.encode(summary_text)
             self.stats.summaries_created += 1
             return ids[:max_summary_tokens]
@@ -1168,14 +1318,26 @@ class CompleteFiniteMemoryLLM:
     # ---------- main interface ----------
 
     def _apply_policy(self, new_tokens: list[int]) -> list[int]:
-        """Apply the configured memory policy with latency budgeting."""
+        """Apply the configured memory policy with latency budgeting (Tier-1 enhanced)."""
         self.stats.total_policy_calls += 1
         
         # If no latency budget or policy is sliding, run directly
         if self.max_policy_ms is None or self.memory_policy == "sliding":
             return self._apply_policy_impl(new_tokens)
         
-        # Run with timing and fallback
+        # Use Tier-1 guarded_call if available
+        if guarded_call:
+            def _fallback_with_count():
+                self.stats.fallback_count += 1
+                return self._evict_sliding(new_tokens)
+            result = guarded_call(
+                func=lambda: self._apply_policy_impl(new_tokens),
+                budget_ms=self.max_policy_ms,
+                fallback=_fallback_with_count
+            )
+            return result
+        
+        # Legacy fallback path
         start_time = time.perf_counter()
         try:
             result = self._apply_policy_impl(new_tokens)
