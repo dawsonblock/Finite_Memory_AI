@@ -136,15 +136,10 @@ def apply_causal_mask(mask: np.ndarray) -> np.ndarray:
 
 
 def estimate_sparsity(mask: np.ndarray) -> float:
-    """Calculate sparsity ratio of attention mask.
-    
-    Args:
-        mask: Attention mask (dense or block)
-    
-    Returns:
-        Sparsity ratio (fraction of zeros)
-    """
+    """Calculate sparsity ratio of attention mask."""
     total = mask.size
+    if total == 0:
+        return 1.0
     nonzero = np.count_nonzero(mask)
     return 1.0 - (nonzero / total)
 
