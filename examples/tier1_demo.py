@@ -8,7 +8,6 @@ Shows:
 """
 
 from finite_memory_llm import CompleteFiniteMemoryLLM, HuggingFaceBackend
-import time
 
 
 def demo_tier1_semantic():
