@@ -5,7 +5,7 @@ Wraps policy calls with timeout enforcement and clean fallback behavior.
 
 import time
 import signal
-from typing import Callable, TypeVar, Any, Optional
+from typing import Callable, TypeVar
 
 T = TypeVar('T')
 
