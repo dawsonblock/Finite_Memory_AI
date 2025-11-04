@@ -121,9 +121,13 @@ class VectorMemory:
         # Evict oldest if over limit
         if len(self._items) > self.max_items:
             # Remove oldest (FIFO)
-            # Note: This doesn't remove from FAISS index (would need ID tracking)
-            # For production, use IndexIDMap wrapper
             self._items.pop(0)
+    
+            # Rebuild the index to keep it in sync with _items
+            self.index.reset()
+            if self._items:
+                embeddings_to_readd = np.vstack([item.embedding for item in self._items]).astype(np.float32)
+                self.index.add(embeddings_to_readd)
         
         return item_id
     
