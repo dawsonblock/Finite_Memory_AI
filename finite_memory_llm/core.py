@@ -145,47 +145,302 @@ class HuggingFaceBackend(LLMBackend):
         self._cache_hits: int = 0
         self._cache_misses: int = 0
 
+    def _find_common_prefix_length(self, tokens1: list[int], tokens2: list[int]) -> int:
+        """Find length of common prefix between two token sequences."""
+        min_len = min(len(tokens1), len(tokens2))
+        for i in range(min_len):
+            if tokens1[i] != tokens2[i]:
+                return i
+        return min_len
+    
     def generate(
         self,
         input_ids: torch.Tensor,
         max_new_tokens: int,
         **kwargs: Any
     ) -> dict[str, Any]:
-        """Generate tokens using the model.
+        """Generate tokens with full KV-cache carryover (v2.3+).
         
-        Note: KV-cache carryover tracking is enabled for metrics,
-        but full KV reuse requires using forward() directly.
-        This implementation tracks cache opportunities for monitoring.
+        Uses model.forward() to enable KV-cache reuse across turns.
+        Only processes new tokens when context has a common prefix.
         """
         input_tokens = input_ids[0].tolist()
         
-        # Track cache hits (for monitoring, not actual KV reuse yet)
-        if self.enable_kv_cache and self._cached_tokens:
-            # Check if this is a continuation of previous context
-            if len(input_tokens) >= len(self._cached_tokens):
-                if input_tokens[:len(self._cached_tokens)] == self._cached_tokens:
-                    self._cache_hits += 1
-                else:
-                    self._cache_misses += 1
+        # Check for KV-cache reuse opportunity
+        prefix_len = 0
+        can_reuse_kv = False
+        
+        if self.enable_kv_cache and self._cached_tokens and self._cached_kv is not None:
+            prefix_len = self._find_common_prefix_length(input_tokens, self._cached_tokens)
+            can_reuse_kv = prefix_len > 0 and prefix_len == len(self._cached_tokens)
+        
+        if can_reuse_kv:
+            # KV cache hit: only process delta tokens
+            self._cache_hits += 1
+            delta_tokens = input_tokens[prefix_len:]
+            
+            if delta_tokens:
+                # Process only new tokens with cached KV
+                delta_ids = torch.tensor([delta_tokens], device=self.device)
+                with torch.no_grad():
+                    outputs = self.model(
+                        input_ids=delta_ids,
+                        past_key_values=self._cached_kv,
+                        use_cache=True,
+                    )
+                    past_kv = outputs.past_key_values
             else:
+                # Exact match: use cached KV directly
+                past_kv = self._cached_kv
+            
+            # Generate new tokens with full context KV cache
+            generated_tokens = []
+            current_kv = past_kv
+            
+            for _ in range(max_new_tokens):
+                # Use last generated token or prepare for first generation
+                if generated_tokens:
+                    next_input = torch.tensor([[generated_tokens[-1]]], device=self.device)
+                else:
+                    # First token: empty input with past_key_values
+                    # We need to predict next token after the context
+                    logits = outputs.logits[0, -1, :]
+                    next_token = logits.argmax().item()
+                    generated_tokens.append(next_token)
+                    
+                    if next_token == self.tokenizer.eos_token_id:
+                        break
+                    continue
+                
+                with torch.no_grad():
+                    outputs = self.model(
+                        input_ids=next_input,
+                        past_key_values=current_kv,
+                        use_cache=True,
+                    )
+                    current_kv = outputs.past_key_values
+                    logits = outputs.logits[0, -1, :]
+                    next_token = logits.argmax().item()
+                    generated_tokens.append(next_token)
+                    
+                    if next_token == self.tokenizer.eos_token_id:
+                        break
+            
+            # Store KV cache for next turn
+            self._cached_kv = current_kv
+            self._cached_tokens = input_tokens + generated_tokens
+            
+            # Build full sequence
+            full_seq = input_tokens + generated_tokens
+            result = {"sequences": torch.tensor([full_seq], device=self.device)}
+            
+        else:
+            # KV cache miss: full forward pass
+            if self._cached_tokens:
                 self._cache_misses += 1
+            
+            with torch.no_grad():
+                # Process full input to get KV cache
+                outputs = self.model(
+                    input_ids=input_ids,
+                    use_cache=True,
+                )
+                past_kv = outputs.past_key_values
+                
+                # Generate tokens
+                generated_tokens = []
+                current_kv = past_kv
+                
+                for _ in range(max_new_tokens):
+                    if generated_tokens:
+                        next_input = torch.tensor([[generated_tokens[-1]]], device=self.device)
+                    else:
+                        logits = outputs.logits[0, -1, :]
+                        next_token = logits.argmax().item()
+                        generated_tokens.append(next_token)
+                        
+                        if next_token == self.tokenizer.eos_token_id:
+                            break
+                        continue
+                    
+                    outputs = self.model(
+                        input_ids=next_input,
+                        past_key_values=current_kv,
+                        use_cache=True,
+                    )
+                    current_kv = outputs.past_key_values
+                    logits = outputs.logits[0, -1, :]
+                    next_token = logits.argmax().item()
+                    generated_tokens.append(next_token)
+                    
+                    if next_token == self.tokenizer.eos_token_id:
+                        break
+                
+                # Store KV cache
+                if self.enable_kv_cache:
+                    self._cached_kv = current_kv
+                    self._cached_tokens = input_tokens + generated_tokens
+                
+                full_seq = input_tokens + generated_tokens
+                result = {"sequences": torch.tensor([full_seq], device=self.device)}
         
-        # Standard generation (future: use forward() with past_key_values)
-        with torch.no_grad():
-            outputs = self.model.generate(
-                input_ids,
-                max_new_tokens=max_new_tokens,
-                pad_token_id=self.tokenizer.pad_token_id,
-                return_dict_in_generate=True,
-                use_cache=True,
-                do_sample=False,  # deterministic by default
-            )
+        return result
+    
+    def generate_stream(
+        self,
+        input_ids: torch.Tensor,
+        max_new_tokens: int,
+        **kwargs: Any
+    ):
+        """Generate tokens with streaming (v2.3+).
         
-        # Update cache tracking
-        if self.enable_kv_cache:
-            self._cached_tokens = input_tokens
+        Yields tokens as they are generated for real-time display.
         
-        return {"sequences": outputs.sequences}
+        Yields:
+            dict with 'token_id', 'token_text', 'is_final'
+        """
+        input_tokens = input_ids[0].tolist()
+        
+        # Check for KV-cache reuse
+        prefix_len = 0
+        can_reuse_kv = False
+        
+        if self.enable_kv_cache and self._cached_tokens and self._cached_kv is not None:
+            prefix_len = self._find_common_prefix_length(input_tokens, self._cached_tokens)
+            can_reuse_kv = prefix_len > 0 and prefix_len == len(self._cached_tokens)
+        
+        if can_reuse_kv:
+            self._cache_hits += 1
+            delta_tokens = input_tokens[prefix_len:]
+            
+            if delta_tokens:
+                delta_ids = torch.tensor([delta_tokens], device=self.device)
+                with torch.no_grad():
+                    outputs = self.model(
+                        input_ids=delta_ids,
+                        past_key_values=self._cached_kv,
+                        use_cache=True,
+                    )
+                    past_kv = outputs.past_key_values
+            else:
+                past_kv = self._cached_kv
+                outputs = None
+            
+            generated_tokens = []
+            current_kv = past_kv
+            
+            for i in range(max_new_tokens):
+                if generated_tokens:
+                    next_input = torch.tensor([[generated_tokens[-1]]], device=self.device)
+                else:
+                    if outputs is not None:
+                        logits = outputs.logits[0, -1, :]
+                    else:
+                        # Need to get logits for exact match case
+                        with torch.no_grad():
+                            dummy_out = self.model(
+                                input_ids=torch.tensor([[input_tokens[-1]]], device=self.device),
+                                past_key_values=past_kv,
+                                use_cache=True,
+                            )
+                            logits = dummy_out.logits[0, -1, :]
+                            current_kv = dummy_out.past_key_values
+                    
+                    next_token = logits.argmax().item()
+                    generated_tokens.append(next_token)
+                    token_text = self.tokenizer.decode([next_token])
+                    
+                    yield {
+                        "token_id": next_token,
+                        "token_text": token_text,
+                        "is_final": (next_token == self.tokenizer.eos_token_id or i == max_new_tokens - 1)
+                    }
+                    
+                    if next_token == self.tokenizer.eos_token_id:
+                        break
+                    continue
+                
+                with torch.no_grad():
+                    outputs = self.model(
+                        input_ids=next_input,
+                        past_key_values=current_kv,
+                        use_cache=True,
+                    )
+                    current_kv = outputs.past_key_values
+                    logits = outputs.logits[0, -1, :]
+                    next_token = logits.argmax().item()
+                    generated_tokens.append(next_token)
+                    token_text = self.tokenizer.decode([next_token])
+                    
+                    yield {
+                        "token_id": next_token,
+                        "token_text": token_text,
+                        "is_final": (next_token == self.tokenizer.eos_token_id or i == max_new_tokens - 1)
+                    }
+                    
+                    if next_token == self.tokenizer.eos_token_id:
+                        break
+            
+            self._cached_kv = current_kv
+            self._cached_tokens = input_tokens + generated_tokens
+            
+        else:
+            # Full forward pass with streaming
+            if self._cached_tokens:
+                self._cache_misses += 1
+            
+            with torch.no_grad():
+                outputs = self.model(
+                    input_ids=input_ids,
+                    use_cache=True,
+                )
+                past_kv = outputs.past_key_values
+                
+                generated_tokens = []
+                current_kv = past_kv
+                
+                for i in range(max_new_tokens):
+                    if generated_tokens:
+                        next_input = torch.tensor([[generated_tokens[-1]]], device=self.device)
+                    else:
+                        logits = outputs.logits[0, -1, :]
+                        next_token = logits.argmax().item()
+                        generated_tokens.append(next_token)
+                        token_text = self.tokenizer.decode([next_token])
+                        
+                        yield {
+                            "token_id": next_token,
+                            "token_text": token_text,
+                            "is_final": (next_token == self.tokenizer.eos_token_id or i == max_new_tokens - 1)
+                        }
+                        
+                        if next_token == self.tokenizer.eos_token_id:
+                            break
+                        continue
+                    
+                    outputs = self.model(
+                        input_ids=next_input,
+                        past_key_values=current_kv,
+                        use_cache=True,
+                    )
+                    current_kv = outputs.past_key_values
+                    logits = outputs.logits[0, -1, :]
+                    next_token = logits.argmax().item()
+                    generated_tokens.append(next_token)
+                    token_text = self.tokenizer.decode([next_token])
+                    
+                    yield {
+                        "token_id": next_token,
+                        "token_text": token_text,
+                        "is_final": (next_token == self.tokenizer.eos_token_id or i == max_new_tokens - 1)
+                    }
+                    
+                    if next_token == self.tokenizer.eos_token_id:
+                        break
+                
+                if self.enable_kv_cache:
+                    self._cached_kv = current_kv
+                    self._cached_tokens = input_tokens + generated_tokens
     
     def get_cache_stats(self) -> dict[str, int]:
         """Get KV-cache statistics."""
