@@ -111,22 +111,14 @@ class SpanEmbedder:
         spans: List[List[int]],
         texts: Optional[List[str]] = None
     ) -> np.ndarray:
-        """Encode multiple spans with batch caching.
-        
-        Args:
-            spans: List of token ID lists
-            texts: Optional list of pre-decoded texts
-        
-        Returns:
-            Array of embeddings, shape (n_spans, embedding_dim)
-        """
+        """Encode multiple spans with batch caching."""
         if not spans:
-            return np.array([])
-        
-        embeddings = []
-        to_compute = []
-        to_compute_idx = []
-        
+            return np.zeros((0, getattr(self.model, "get_sentence_embedding_dimension", lambda: 0)()), dtype=np.float32)
+    
+        embeddings: list[Optional[np.ndarray]] = []
+        to_compute: list[str] = []
+        to_compute_idx: list[int] = []
+    
         # Check cache for each span
         for i, span in enumerate(spans):
             span_hash = self._hash_span(span)
@@ -140,21 +132,26 @@ class SpanEmbedder:
                 to_compute_idx.append(i)
                 if texts is not None:
                     to_compute.append(texts[i])
-        
+    
+        # If there are misses and no texts were provided, fail fast with a clear error
+        if to_compute_idx and texts is None:
+            raise ValueError("encode_spans requires 'texts' when cache misses occur.")
+    
         # Compute missing embeddings in batch
         if to_compute:
             new_embeddings = self.model.encode(to_compute, convert_to_numpy=True)
-            
             for idx, emb in zip(to_compute_idx, new_embeddings):
                 embeddings[idx] = emb
                 span_hash = self._hash_span(spans[idx])
                 self._cache[span_hash] = emb
-                
-                # Evict oldest if needed
                 if len(self._cache) > self.cache_size:
                     self._cache.popitem(last=False)
-        
-        return np.vstack(embeddings)
+    
+        # Ensure no None remains
+        if any(e is None for e in embeddings):
+            raise RuntimeError("Internal error: some embeddings could not be computed.")
+    
+        return np.vstack(embeddings)  # type: ignore[arg-type]
     
     def select_representatives(
         self,
