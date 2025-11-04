@@ -16,8 +16,6 @@ Quick start:
     >>> result = llm.chat("Hello!")
 """
 
-from __future__ import annotations
-
 from .core import (
     APIChatBackend,
     CompleteFiniteMemoryLLM,
