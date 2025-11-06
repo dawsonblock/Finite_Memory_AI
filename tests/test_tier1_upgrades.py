@@ -287,7 +287,7 @@ def test_longformer_mask_export():
 # Test telemetry
 def test_metrics_basic():
     """Test basic metrics collection."""
-    from finite_memory_llm.telemetry.metrics import Metrics, TurnMetrics
+    from finite_memory_llm.telemetry.metrics import Metrics
     from dataclasses import dataclass
     
     # Mock stats

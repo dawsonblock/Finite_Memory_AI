@@ -10,11 +10,10 @@ import torch
 import tempfile
 import json
 from pathlib import Path
-from unittest.mock import Mock, MagicMock
+from unittest.mock import Mock
 
 from finite_memory_llm import (
     CompleteFiniteMemoryLLM,
-    HuggingFaceBackend,
     APIChatBackend,
     MemoryStats,
     ContextBuilder,
@@ -561,7 +560,7 @@ class TestKVCacheTracking:
         """Test that KV-cache tracking is enabled by default."""
         from finite_memory_llm.core import HuggingFaceBackend
         backend = HuggingFaceBackend("gpt2", device="cpu")
-        assert backend.enable_kv_cache == True
+        assert backend.enable_kv_cache
     
     def test_kv_cache_stats(self):
         """Test KV-cache statistics tracking."""
