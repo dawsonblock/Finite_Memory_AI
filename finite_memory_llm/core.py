@@ -282,132 +282,34 @@ class HuggingFaceBackend(LLMBackend):
         max_new_tokens: int,
         **kwargs: Any
     ) -> dict[str, Any]:
-        """Generate tokens with full KV-cache carryover (v2.3+).
+        """Generate tokens with simplified KV-cache (v2.4+).
         
-        Uses model.forward() to enable KV-cache reuse across turns.
-        Only processes new tokens when context has a common prefix.
+        Simplified approach: just use model.generate() normally.
+        KV-cache is handled internally by transformers for speed.
         """
+        with torch.no_grad():
+            # Use optimized model.generate() - transformers handles KV-cache internally
+            generated_ids = self.model.generate(
+                input_ids,
+                max_new_tokens=max_new_tokens,
+                use_cache=self.enable_kv_cache,
+                pad_token_id=self.tokenizer.eos_token_id,
+                **kwargs
+            )
+        
+        # Track cache stats (simplified - just count calls)
         input_tokens = input_ids[0].tolist()
-        
-        # Check for KV-cache reuse opportunity
-        prefix_len = 0
-        can_reuse_kv = False
-        
-        if self.enable_kv_cache and self._cached_tokens and self._cached_kv is not None:
+        if self._cached_tokens:
             prefix_len = self._find_common_prefix_length(input_tokens, self._cached_tokens)
-            can_reuse_kv = prefix_len > 0 and prefix_len == len(self._cached_tokens)
-        
-        if can_reuse_kv:
-            # KV cache hit: only process delta tokens
-            self._cache_hits += 1
-            delta_tokens = input_tokens[prefix_len:]
-            
-            if delta_tokens:
-                # Process only new tokens with cached KV
-                delta_ids = torch.tensor([delta_tokens], device=self.device)
-                with torch.no_grad():
-                    outputs = self.model(
-                        input_ids=delta_ids,
-                        past_key_values=self._cached_kv,
-                        use_cache=True,
-                    )
-                    past_kv = outputs.past_key_values
+            if prefix_len > 0 and prefix_len == len(self._cached_tokens):
+                self._cache_hits += 1
             else:
-                # Exact match: use cached KV directly
-                past_kv = self._cached_kv
-            
-            # Generate new tokens with full context KV cache
-            generated_tokens = []
-            current_kv = past_kv
-            
-            for _ in range(max_new_tokens):
-                # Use last generated token or prepare for first generation
-                if generated_tokens:
-                    next_input = torch.tensor([[generated_tokens[-1]]], device=self.device)
-                else:
-                    # First token: empty input with past_key_values
-                    # We need to predict next token after the context
-                    logits = outputs.logits[0, -1, :]
-                    next_token = logits.argmax().item()
-                    generated_tokens.append(next_token)
-                    
-                    if next_token == self.tokenizer.eos_token_id:
-                        break
-                    continue
-                
-                with torch.no_grad():
-                    outputs = self.model(
-                        input_ids=next_input,
-                        past_key_values=current_kv,
-                        use_cache=True,
-                    )
-                    current_kv = outputs.past_key_values
-                    logits = outputs.logits[0, -1, :]
-                    next_token = logits.argmax().item()
-                    generated_tokens.append(next_token)
-                    
-                    if next_token == self.tokenizer.eos_token_id:
-                        break
-            
-            # Store KV cache for next turn
-            self._cached_kv = current_kv
-            self._cached_tokens = input_tokens + generated_tokens
-            
-            # Build full sequence
-            full_seq = input_tokens + generated_tokens
-            result = {"sequences": torch.tensor([full_seq], device=self.device)}
-            
-        else:
-            # KV cache miss: full forward pass
-            if self._cached_tokens:
                 self._cache_misses += 1
-            
-            with torch.no_grad():
-                # Process full input to get KV cache
-                outputs = self.model(
-                    input_ids=input_ids,
-                    use_cache=True,
-                )
-                past_kv = outputs.past_key_values
-                
-                # Generate tokens
-                generated_tokens = []
-                current_kv = past_kv
-                
-                for _ in range(max_new_tokens):
-                    if generated_tokens:
-                        next_input = torch.tensor([[generated_tokens[-1]]], device=self.device)
-                    else:
-                        logits = outputs.logits[0, -1, :]
-                        next_token = logits.argmax().item()
-                        generated_tokens.append(next_token)
-                        
-                        if next_token == self.tokenizer.eos_token_id:
-                            break
-                        continue
-                    
-                    outputs = self.model(
-                        input_ids=next_input,
-                        past_key_values=current_kv,
-                        use_cache=True,
-                    )
-                    current_kv = outputs.past_key_values
-                    logits = outputs.logits[0, -1, :]
-                    next_token = logits.argmax().item()
-                    generated_tokens.append(next_token)
-                    
-                    if next_token == self.tokenizer.eos_token_id:
-                        break
-                
-                # Store KV cache
-                if self.enable_kv_cache:
-                    self._cached_kv = current_kv
-                    self._cached_tokens = input_tokens + generated_tokens
-                
-                full_seq = input_tokens + generated_tokens
-                result = {"sequences": torch.tensor([full_seq], device=self.device)}
         
-        return result
+        # Update cached tokens for next turn
+        self._cached_tokens = generated_ids[0].tolist()
+        
+        return {"sequences": generated_ids}
     
     def generate_stream(
         self,

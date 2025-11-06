@@ -8,32 +8,40 @@ import sys
 import time
 from pathlib import Path
 
-# Add project to path
-project_root = Path(__file__).parent.parent
-sys.path.insert(0, str(project_root))
 
-
-def measure_import(module_name: str, description: str) -> float:
-    """Measure actual import time."""
-    # Clear module cache
-    if module_name in sys.modules:
-        del sys.modules[module_name]
+def profile_import_isolated(module_name: str, description: str) -> float:
+    """Profile import time in isolated subprocess."""
+    code = f"""
+import time
+start = time.perf_counter()
+import {module_name}
+elapsed = time.perf_counter() - start
+print(elapsed)
+"""
     
-    start = time.perf_counter()
     try:
-        __import__(module_name)
-        elapsed = time.perf_counter() - start
-        print(f"✓ {description:40s} {elapsed:6.3f}s")
-        return elapsed
-    except ImportError as e:
-        print(f"✗ {description:40s} FAILED: {e}")
+        result = subprocess.run(
+            [sys.executable, "-c", code],
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
+        
+        if result.returncode == 0:
+            elapsed = float(result.stdout.strip())
+            print(f"✓ {description:40} {elapsed:.3f}s")
+            return elapsed
+        else:
+            print(f"✗ {description:40} FAILED")
+            return 0.0
+    except Exception as e:
+        print(f"✗ {description:40} ERROR: {e}")
         return 0.0
 
 
 def main():
-    """Profile all imports."""
     print("=" * 70)
-    print("HONEST IMPORT TIME PROFILING")
+    print("HONEST IMPORT TIME PROFILING (Isolated)")
     print("=" * 70)
     print()
     
