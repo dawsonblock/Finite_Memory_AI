@@ -1,0 +1,124 @@
+# Package Split Configuration for Finite Memory AI
+# This shows how to split into multiple packages
+
+# ============================================================================
+# Package 1: finite-memory-llm-core (LIGHTWEIGHT - 5MB)
+# ============================================================================
+[project]
+name = "finite-memory-llm-core"
+version = "2.4.0"
+description = "Lightweight core interfaces for finite memory LLM (no torch)"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [{name = "Your Name", email = "your.email@example.com"}]
+
+# MINIMAL dependencies - NO torch, NO transformers
+dependencies = [
+    "numpy>=1.24.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-cov>=4.1.0",
+    "ruff>=0.1.0",
+    "black>=23.0.0",
+    "mypy>=1.5.0",
+]
+
+# ============================================================================
+# Package 2: finite-memory-llm-local (HEAVY - 1.2GB)
+# ============================================================================
+# [project]
+# name = "finite-memory-llm-local"
+# version = "2.4.0"
+# description = "Finite memory LLM with local model support (includes torch)"
+# 
+# dependencies = [
+#     "finite-memory-llm-core==2.4.0",
+#     "torch>=2.0.0",
+#     "transformers>=4.30.0",
+#     "sentence-transformers>=2.2.0",
+#     "scikit-learn>=1.3.0",
+# ]
+
+# ============================================================================
+# Package 3: finite-memory-llm-api (LIGHT - 10MB)
+# ============================================================================
+# [project]
+# name = "finite-memory-llm-api"
+# version = "2.4.0"
+# description = "Finite memory LLM for API backends only (no torch)"
+# 
+# dependencies = [
+#     "finite-memory-llm-core==2.4.0",
+#     "requests>=2.31.0",
+#     "aiohttp>=3.8.0",  # For async API calls
+# ]
+#
+# [project.optional-dependencies]
+# cohere = ["cohere>=4.0.0"]
+# anthropic = ["anthropic>=0.3.0"]
+# openai = ["openai>=1.0.0"]
+# all = ["cohere>=4.0.0", "anthropic>=0.3.0", "openai>=1.0.0"]
+
+# ============================================================================
+# Package 4: finite-memory-llm (META PACKAGE - installs local by default)
+# ============================================================================
+# [project]
+# name = "finite-memory-llm"
+# version = "2.4.0"
+# description = "Finite memory LLM (meta-package, installs local by default)"
+# 
+# dependencies = [
+#     "finite-memory-llm-local==2.4.0",
+# ]
+#
+# [project.optional-dependencies]
+# core-only = ["finite-memory-llm-core==2.4.0"]
+# api-only = ["finite-memory-llm-api==2.4.0"]
+# all = [
+#     "finite-memory-llm-local==2.4.0",
+#     "finite-memory-llm-api[all]==2.4.0",
+# ]
+
+# ============================================================================
+# Build Configuration
+# ============================================================================
+[build-system]
+requires = ["setuptools>=68.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["finite_memory_llm*"]
+exclude = ["tests*", "examples*", "scripts*"]
+
+# ============================================================================
+# Tool Configuration
+# ============================================================================
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.black]
+line-length = 100
+target-version = ["py310"]
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --strict-markers --tb=short"
+markers = [
+    "slow: marks tests as slow",
+    "integration: marks tests as integration tests",
+]
