@@ -10,13 +10,13 @@ from finite_memory_llm import CompleteFiniteMemoryLLM, HuggingFaceBackend
 
 # Check for optional dependencies
 try:
-    import anthropic
+    import anthropic  # noqa: F401
     HAS_ANTHROPIC = True
 except ImportError:
     HAS_ANTHROPIC = False
 
 try:
-    import cohere
+    import cohere  # noqa: F401
     HAS_COHERE = True
 except ImportError:
     HAS_COHERE = False
