@@ -72,23 +72,26 @@ def _build_coo_mask(
     total_tokens: int
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Build COO sparse mask (row, col, data)."""
-    kept_positions = []
-    for span_idx in keep_indices:
-        start = span_idx * span_size
-        end = min(start + span_size, total_tokens)
-        kept_positions.extend(range(start, end))
+    # Optimized: use itertools.chain for efficient concatenation
+    from itertools import chain
+    kept_positions = list(chain.from_iterable(
+        range(span_idx * span_size, min(span_idx * span_size + span_size, total_tokens))
+        for span_idx in keep_indices
+    ))
     
-    rows = []
-    cols = []
+    # Optimized: vectorized approach using NumPy
+    kept_positions_arr = np.array(kept_positions)
+    # Filter valid positions
+    valid_mask = (kept_positions_arr >= 0) & (kept_positions_arr < total_tokens)
+    valid_positions = kept_positions_arr[valid_mask]
     
-    for i in kept_positions:
-        for j in kept_positions:
-            if 0 <= i < total_tokens and 0 <= j < total_tokens:
-                rows.append(i)
-                cols.append(j)
+    # Create meshgrid for all combinations (vectorized)
+    rows_grid, cols_grid = np.meshgrid(valid_positions, valid_positions, indexing='ij')
+    rows = rows_grid.flatten()
+    cols = cols_grid.flatten()
     
     data = np.ones(len(rows), dtype=bool)
-    return np.array(rows), np.array(cols), data
+    return rows, cols, data
 
 
 def _build_block_mask(

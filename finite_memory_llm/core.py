@@ -568,13 +568,17 @@ class ContextBuilder:
             self._cache_hits += 1
             return self._anchor_cache[cache_key]
         
-        # Compute boundaries
+        # Compute boundaries (optimized with list comprehension)
+        SENTENCE_TERMINATORS = frozenset('.!?\n')
         idx = [0]
         try:
-            for i, t in enumerate(toks[:-1]):
-                ch = backend.decode([t])
-                if any(p in ch for p in ('.', '!', '?', '\n')):
-                    idx.append(i + 1)
+            # Optimized: list comprehension + frozenset lookup
+            sentence_breaks = [
+                i + 1
+                for i, t in enumerate(toks[:-1])
+                if any(c in SENTENCE_TERMINATORS for c in backend.decode([t]))
+            ]
+            idx.extend(sentence_breaks)
         except Exception:
             pass
         if toks:
@@ -746,14 +750,22 @@ class CompleteFiniteMemoryLLM:
     # ---------- policy: sliding ----------
 
     def _evict_sliding(self, new_tokens: list[int]) -> list[int]:
-        """Sliding window eviction policy."""
+        """Sliding window eviction policy (optimized)."""
         n_new = len(new_tokens)
         cur = len(self.token_buffer)
         total = cur + n_new
         if total > self.max_tokens:
             overflow = total - self.max_tokens
-            for _ in range(min(overflow, cur)):
-                self.token_buffer.popleft()
+            # Optimized: if removing more than half, rebuild instead of loop
+            if overflow > cur // 2:
+                self.token_buffer = deque(
+                    list(self.token_buffer)[overflow:],
+                    maxlen=self.max_tokens
+                )
+            else:
+                # Otherwise, use popleft loop
+                for _ in range(min(overflow, cur)):
+                    self.token_buffer.popleft()
             self.stats.evictions += overflow
         self.token_buffer.extend(new_tokens)
         return list(self.token_buffer)
