@@ -137,9 +137,16 @@ class SpanEmbedder:
         if to_compute_idx and texts is None:
             raise ValueError("encode_spans requires 'texts' when cache misses occur.")
     
-        # Compute missing embeddings in batch
+        # Compute missing embeddings in batch (optimized with batch_size)
         if to_compute:
-            new_embeddings = self.model.encode(to_compute, convert_to_numpy=True)
+            # Optimized: use batch_size for better GPU/CPU utilization
+            batch_size = min(32, len(to_compute))  # Optimal batch size
+            new_embeddings = self.model.encode(
+                to_compute,
+                convert_to_numpy=True,
+                batch_size=batch_size,
+                show_progress_bar=False  # Disable progress for performance
+            )
             for idx, emb in zip(to_compute_idx, new_embeddings):
                 embeddings[idx] = emb
                 span_hash = self._hash_span(spans[idx])
