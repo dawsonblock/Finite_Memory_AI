@@ -4,9 +4,9 @@
 This script measures ACTUAL import times, not theoretical ones.
 """
 
+import subprocess
 import sys
 import time
-from pathlib import Path
 
 
 def profile_import_isolated(module_name: str, description: str) -> float:
@@ -50,25 +50,25 @@ def main():
     # Test 1: Lightweight interfaces (should be <0.01s)
     print("[1] Lightweight Interfaces")
     print("-" * 70)
-    results["interfaces"] = measure_import(
+    results["interfaces"] = profile_import_isolated(
         "finite_memory_llm.interfaces",
         "Interfaces only (no torch)"
     )
     print()
-    
+
     # Test 2: Core with torch (the real cost)
     print("[2] Core Module (with torch/transformers)")
     print("-" * 70)
-    results["core"] = measure_import(
+    results["core"] = profile_import_isolated(
         "finite_memory_llm.core",
         "Core (torch + transformers)"
     )
     print()
-    
+
     # Test 3: Full package
     print("[3] Full Package Import")
     print("-" * 70)
-    results["full"] = measure_import(
+    results["full"] = profile_import_isolated(
         "finite_memory_llm",
         "Full package"
     )

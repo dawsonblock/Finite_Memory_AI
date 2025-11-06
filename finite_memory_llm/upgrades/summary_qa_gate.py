@@ -131,7 +131,7 @@ class SummaryQAGate:
         fidelity = 1.0 - (hallucinated / total_facts)
         
         if verbose:
-            print(f"Summary verification:")
+            print("Summary verification:")
             print(f"  Numbers: {len(summary_numbers)} total, {len(hallucinated_numbers)} hallucinated")
             print(f"  Names: {len(summary_names)} total, {len(hallucinated_names)} hallucinated")
             print(f"  Quotes: {len(summary_quotes)} total, {len(hallucinated_quotes)} hallucinated")

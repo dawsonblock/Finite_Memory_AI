@@ -7,7 +7,7 @@ Uses MiniBatchKMeans with warm-start for stable, low-jitter clustering.
 from __future__ import annotations
 
 import hashlib
-from typing import List, Tuple, Optional, Any
+from typing import List, Optional, Any
 from collections import OrderedDict
 
 import numpy as np

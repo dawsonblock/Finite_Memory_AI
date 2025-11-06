@@ -5,7 +5,6 @@ Tests actual functionality, not just imports.
 """
 
 import pytest
-import sys
 
 from finite_memory_llm import CompleteFiniteMemoryLLM, HuggingFaceBackend
 

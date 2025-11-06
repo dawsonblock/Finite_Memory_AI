@@ -54,9 +54,8 @@ from abc import ABC, abstractmethod
 from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass, asdict
-from functools import wraps
 from pathlib import Path
-from typing import Any, Generator
+from typing import Any
 
 import numpy as np
 import torch
@@ -73,7 +72,7 @@ try:
     from .telemetry.metrics import Metrics
     from .telemetry.turn_debug_dump import TurnDumper
     _UPGRADES_AVAILABLE = True
-except ImportError as e:
+except ImportError:
     _UPGRADES_AVAILABLE = False
     guarded_call = None
     timed_call = None

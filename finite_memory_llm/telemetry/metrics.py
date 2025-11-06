@@ -9,7 +9,7 @@ Tracks key metrics for finite memory LLM performance:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
 from typing import Dict, Any
 from collections import deque
 import time
