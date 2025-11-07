@@ -125,6 +125,12 @@ class ChatApp {
             });
         }
 
+        // Attach file button
+        const attachBtn = document.getElementById('attachBtn');
+        if (attachBtn) {
+            attachBtn.addEventListener('click', () => this.handleFileUpload());
+        }
+
         // Example prompts
         document.querySelectorAll('.example-prompt').forEach(btn => {
             btn.addEventListener('click', (e) => {
@@ -516,6 +522,82 @@ class ChatApp {
         } else {
             document.documentElement.removeAttribute('data-theme');
         }
+    }
+
+    handleFileUpload() {
+        // Create hidden file input
+        const fileInput = document.createElement('input');
+        fileInput.type = 'file';
+        fileInput.accept = '.txt,.md,.json,.csv,.log,.py,.js,.html,.css';
+        fileInput.style.display = 'none';
+        
+        fileInput.addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            // Check file size (max 1MB)
+            if (file.size > 1024 * 1024) {
+                alert('File too large! Maximum size is 1MB.');
+                return;
+            }
+
+            try {
+                // Read file content
+                const text = await file.text();
+                
+                // Add file content to input
+                const input = document.getElementById('messageInput');
+                if (input) {
+                    const filePrompt = `I've uploaded a file named "${file.name}":\n\n\`\`\`\n${text.substring(0, 2000)}${text.length > 2000 ? '\n... (truncated)' : ''}\n\`\`\`\n\nPlease analyze this file.`;
+                    input.value = filePrompt;
+                    this.autoResize(input);
+                    
+                    // Show notification
+                    this.showNotification(`File "${file.name}" loaded successfully!`, 'success');
+                }
+            } catch (error) {
+                console.error('Error reading file:', error);
+                alert('Error reading file: ' + error.message);
+            }
+            
+            // Clean up
+            document.body.removeChild(fileInput);
+        });
+        
+        // Trigger file selection
+        document.body.appendChild(fileInput);
+        fileInput.click();
+    }
+
+    showNotification(message, type = 'info') {
+        // Create notification element
+        const notification = document.createElement('div');
+        notification.className = `notification notification-${type}`;
+        notification.textContent = message;
+        notification.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 12px 20px;
+            background: ${type === 'success' ? '#10b981' : '#4f46e5'};
+            color: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            z-index: 10000;
+            animation: slideIn 0.3s ease-out;
+        `;
+        
+        document.body.appendChild(notification);
+        
+        // Remove after 3 seconds
+        setTimeout(() => {
+            notification.style.animation = 'slideOut 0.3s ease-out';
+            setTimeout(() => {
+                if (notification.parentNode) {
+                    document.body.removeChild(notification);
+                }
+            }, 300);
+        }, 3000);
     }
 }
 
