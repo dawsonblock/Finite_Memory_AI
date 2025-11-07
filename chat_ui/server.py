@@ -38,6 +38,9 @@ def call_deepseek_direct(messages, max_tokens=1000):
     try:
         print(f"Calling DeepSeek with {len(messages)} messages")
         
+        # Get the user's question for thinking simulation
+        user_question = messages[-1]['content'] if messages else ""
+        
         response = requests.post(
             DEEPSEEK_API_BASE,
             headers={
@@ -58,11 +61,16 @@ def call_deepseek_direct(messages, max_tokens=1000):
         data = response.json()
         result = data['choices'][0]['message']['content']
         
-        # Show reasoning if available
+        # Check if response has reasoning (DeepSeek R1 model)
         if 'reasoning_content' in data['choices'][0]:
             reasoning = data['choices'][0]['reasoning_content']
             print(f"DeepSeek reasoning: {reasoning}")
             result = f"**Thinking:** {reasoning}\n\n{result}"
+        else:
+            # Simulate thinking process for regular responses
+            thinking = generate_thinking(user_question, result)
+            if thinking:
+                result = f"**Thinking:** {thinking}\n\n{result}"
         
         print(f"DeepSeek response ({len(result)} chars): {result[:100]}...")
         return result
@@ -71,6 +79,25 @@ def call_deepseek_direct(messages, max_tokens=1000):
         import traceback
         traceback.print_exc()
         raise
+
+
+def generate_thinking(question, response):
+    """Generate a thinking process based on the question and response"""
+    # Simple heuristic-based thinking generation
+    question_lower = question.lower()
+    
+    if any(word in question_lower for word in ['explain', 'what is', 'how does', 'why']):
+        return f"I need to explain '{question[:50]}...' in a clear and understandable way. I'll break down the concept and use analogies if helpful."
+    elif any(word in question_lower for word in ['compare', 'difference', 'vs']):
+        return f"This is a comparison question. I'll analyze both sides and highlight the key differences and similarities."
+    elif any(word in question_lower for word in ['write', 'create', 'code', 'program']):
+        return f"This is a coding/creation task. I'll structure the solution logically and include necessary details."
+    elif any(word in question_lower for word in ['continue', 'more', 'go on']):
+        return "Continuing from where I left off, maintaining context and flow."
+    elif len(response) > 500:
+        return f"This is a complex question requiring a detailed response. I'll organize my answer with clear sections and examples."
+    else:
+        return f"Analyzing the question: '{question[:60]}...' and formulating a helpful response."
 
 
 def call_deepseek_api(prompt, max_tokens=150):

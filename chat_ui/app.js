@@ -185,6 +185,7 @@ class ChatApp {
         
         // Parse thinking/reasoning if present (for AI messages)
         if (role === 'assistant' && content.includes('**Thinking:**')) {
+            console.log('Found thinking section in response');
             bubble.classList.add('has-thinking');
             
             // Split thinking and response
@@ -193,6 +194,9 @@ class ChatApp {
                 const thinkingAndResponse = parts[1].split('\n\n');
                 const thinking = thinkingAndResponse[0].trim();
                 const response = thinkingAndResponse.slice(1).join('\n\n').trim();
+                
+                console.log('Thinking:', thinking);
+                console.log('Response:', response.substring(0, 100));
                 
                 // Create thinking section
                 const thinkingSection = document.createElement('div');
@@ -209,11 +213,13 @@ class ChatApp {
                 
                 bubble.appendChild(thinkingSection);
                 bubble.appendChild(responseSection);
+                console.log('Thinking section created successfully');
             } else {
                 bubble.innerHTML = this.formatMarkdown(content);
             }
         } else {
             // Regular message
+            console.log('No thinking section found, role:', role);
             bubble.innerHTML = this.formatMarkdown(content);
         }
 
