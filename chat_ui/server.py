@@ -248,9 +248,47 @@ def chat():
             # Call DeepSeek directly
             response_text = call_deepseek_direct(messages)
             
+            # Calculate tokens (rough estimate: ~4 chars per token)
+            user_tokens = len(message) // 4
+            assistant_tokens = len(response_text) // 4
+            
             # Update conversation history
-            llm.conversation_history.append({"role": "user", "content": message, "tokens": len(message.split())})
-            llm.conversation_history.append({"role": "assistant", "content": response_text, "tokens": len(response_text.split())})
+            llm.conversation_history.append({
+                "role": "user", 
+                "content": message, 
+                "tokens": user_tokens
+            })
+            llm.conversation_history.append({
+                "role": "assistant", 
+                "content": response_text, 
+                "tokens": assistant_tokens
+            })
+            
+            # Update stats
+            llm.stats.tokens_seen += user_tokens + assistant_tokens
+            llm.stats.tokens_retained = sum(
+                entry.get('tokens', 0) 
+                for entry in llm.conversation_history
+            )
+            
+            # Apply memory policy if needed
+            if llm.stats.tokens_retained > llm.max_tokens:
+                print(f"Memory limit reached: {llm.stats.tokens_retained}/{llm.max_tokens}")
+                # Keep only recent messages within limit
+                total_tokens = 0
+                keep_from = len(llm.conversation_history)
+                for i in range(len(llm.conversation_history) - 1, -1, -1):
+                    total_tokens += llm.conversation_history[i].get('tokens', 0)
+                    if total_tokens > llm.max_tokens:
+                        keep_from = i + 1
+                        break
+                
+                evicted = len(llm.conversation_history) - keep_from
+                if evicted > 0:
+                    llm.conversation_history = llm.conversation_history[keep_from:]
+                    llm.stats.evictions += evicted
+                    llm.stats.tokens_retained = total_tokens
+                    print(f"Evicted {evicted} messages, retained {llm.stats.tokens_retained} tokens")
             
             stats = llm.stats
             

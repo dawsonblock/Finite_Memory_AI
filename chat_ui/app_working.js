@@ -302,9 +302,24 @@ class ChatApp {
     showTypingIndicator() {
         const messagesContainer = document.getElementById('chatMessages');
         const typingDiv = document.createElement('div');
-        typingDiv.className = 'typing-indicator';
+        typingDiv.className = 'message assistant';
         typingDiv.id = 'typingIndicator';
-        typingDiv.innerHTML = '<span></span><span></span><span></span>';
+        typingDiv.innerHTML = `
+            <div class="message-avatar">AI</div>
+            <div class="message-content">
+                <div class="message-bubble thinking-bubble">
+                    <div class="thinking-animation">
+                        <svg class="thinking-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                            <circle cx="9" cy="10" r="1" fill="currentColor"/>
+                            <circle cx="12" cy="10" r="1" fill="currentColor"/>
+                            <circle cx="15" cy="10" r="1" fill="currentColor"/>
+                        </svg>
+                        <span class="thinking-text">AI is thinking...</span>
+                    </div>
+                </div>
+            </div>
+        `;
         messagesContainer.appendChild(typingDiv);
         this.scrollToBottom();
     }
