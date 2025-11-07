@@ -182,21 +182,73 @@ class ChatApp {
 
         const bubble = document.createElement('div');
         bubble.className = 'message-bubble';
-        bubble.textContent = content;
+        
+        // Parse thinking/reasoning if present (for AI messages)
+        if (role === 'assistant' && content.includes('**Thinking:**')) {
+            bubble.classList.add('has-thinking');
+            
+            // Split thinking and response
+            const parts = content.split('**Thinking:**');
+            if (parts.length > 1) {
+                const thinkingAndResponse = parts[1].split('\n\n');
+                const thinking = thinkingAndResponse[0].trim();
+                const response = thinkingAndResponse.slice(1).join('\n\n').trim();
+                
+                // Create thinking section
+                const thinkingSection = document.createElement('div');
+                thinkingSection.className = 'thinking-section';
+                thinkingSection.innerHTML = `
+                    <h4>AI Reasoning Process</h4>
+                    <div class="thinking-content">${this.escapeHtml(thinking)}</div>
+                `;
+                
+                // Create response section
+                const responseSection = document.createElement('div');
+                responseSection.className = 'response-section';
+                responseSection.innerHTML = this.formatMarkdown(response);
+                
+                bubble.appendChild(thinkingSection);
+                bubble.appendChild(responseSection);
+            } else {
+                bubble.innerHTML = this.formatMarkdown(content);
+            }
+        } else {
+            // Regular message
+            bubble.innerHTML = this.formatMarkdown(content);
+        }
 
         const time = document.createElement('div');
         time.className = 'message-time';
-        time.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        time.textContent = new Date().toLocaleTimeString('en-US', { 
+            hour: '2-digit', 
+            minute: '2-digit' 
+        });
 
         contentDiv.appendChild(bubble);
         contentDiv.appendChild(time);
         messageDiv.appendChild(avatar);
         messageDiv.appendChild(contentDiv);
-
         messagesContainer.appendChild(messageDiv);
-        messagesContainer.scrollTop = messagesContainer.scrollHeight;
 
-        this.messages.push({ role, content, timestamp: new Date() });
+        this.messages.push({ role, content, timestamp: Date.now() });
+        this.scrollToBottom();
+    }
+    
+    formatMarkdown(text) {
+        // Simple markdown formatting
+        return text
+            .replace(/### (.*?)(\n|$)/g, '<h3>$1</h3>')
+            .replace(/## (.*?)(\n|$)/g, '<h2>$1</h2>')
+            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+            .replace(/\*(.*?)\*/g, '<em>$1</em>')
+            .replace(/`(.*?)`/g, '<code>$1</code>')
+            .replace(/\n/g, '<br>');
+    }
+    
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
     }
 
     showTypingIndicator() {
