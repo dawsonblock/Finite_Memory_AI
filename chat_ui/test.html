@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Simple Test</title>
+</head>
+<body>
+    <h1>Simple Chat Test</h1>
+    <input type="text" id="testInput" placeholder="Type message">
+    <button id="testBtn">Send</button>
+    <div id="output"></div>
+
+    <script>
+        console.log('Test page loaded');
+        
+        document.getElementById('testBtn').addEventListener('click', async () => {
+            console.log('Button clicked!');
+            const input = document.getElementById('testInput');
+            const message = input.value;
+            console.log('Message:', message);
+            
+            try {
+                console.log('Sending to /api/chat...');
+                const response = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message })
+                });
+                
+                console.log('Response status:', response.status);
+                const data = await response.json();
+                console.log('Response data:', data);
+                
+                document.getElementById('output').innerHTML = 
+                    '<pre>' + JSON.stringify(data, null, 2) + '</pre>';
+            } catch (error) {
+                console.error('Error:', error);
+                document.getElementById('output').textContent = 'Error: ' + error.message;
+            }
+        });
+    </script>
+</body>
+</html>

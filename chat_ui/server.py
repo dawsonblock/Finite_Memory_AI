@@ -227,6 +227,13 @@ def chat():
         try:
             # Build conversation messages from history
             messages = []
+            
+            # Add system message to force English
+            messages.append({
+                "role": "system",
+                "content": "You are a helpful AI assistant. Always respond in English, regardless of the language used in the question."
+            })
+            
             for entry in llm.conversation_history[-10:]:  # Last 10 messages for context
                 messages.append({
                     "role": entry["role"],

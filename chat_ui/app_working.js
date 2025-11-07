@@ -1,92 +1,143 @@
-// Modern Chat UI - JavaScript
+// Simple Working Chat UI - JavaScript
 class ChatApp {
     constructor() {
         console.log('ChatApp constructor called');
         this.messages = [];
-        this.currentChatId = null;
         this.settings = {
             policy: 'sliding',
             maxTokens: 512,
-            model: 'gpt2',
-            telemetry: true,
+            model: 'deepseek-chat',
             darkMode: false
         };
         
-        try {
-            this.init();
-            console.log('ChatApp initialized successfully');
-        } catch (error) {
-            console.error('Error initializing ChatApp:', error);
-        }
+        this.init();
     }
 
     init() {
-        this.loadSettings();
+        console.log('Initializing ChatApp...');
         this.bindEvents();
         this.updateStats();
-        this.applyTheme();
+        console.log('ChatApp initialized successfully');
     }
 
     bindEvents() {
-        // Input events
         const messageInput = document.getElementById('messageInput');
         const sendBtn = document.getElementById('sendBtn');
-        const charCount = document.getElementById('charCount');
 
+        if (!messageInput || !sendBtn) {
+            console.error('Required elements not found!');
+            return;
+        }
+
+        // Input auto-resize
         messageInput.addEventListener('input', (e) => {
             this.autoResize(e.target);
-            charCount.textContent = `${e.target.value.length} characters`;
+            const charCount = document.getElementById('charCount');
+            if (charCount) {
+                charCount.textContent = `${e.target.value.length} characters`;
+            }
         });
 
+        // Enter key to send
         messageInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
-                console.log('Enter key pressed!');
+                console.log('Enter key pressed');
                 e.preventDefault();
                 this.sendMessage();
             }
         });
 
+        // Send button click
         sendBtn.addEventListener('click', () => {
-            console.log('Send button clicked!');
+            console.log('Send button clicked');
             this.sendMessage();
         });
+
+        // New chat button
+        const newChatBtn = document.getElementById('newChatBtn');
+        if (newChatBtn) {
+            newChatBtn.addEventListener('click', () => this.newChat());
+        }
+
+        // Clear chat button
+        const clearBtn = document.getElementById('clearBtn');
+        if (clearBtn) {
+            clearBtn.addEventListener('click', () => this.clearChat());
+        }
+
+        // Export chat button
+        const exportBtn = document.getElementById('exportBtn');
+        if (exportBtn) {
+            exportBtn.addEventListener('click', () => this.exportChat());
+        }
+
+        // Settings button
+        const settingsBtn = document.getElementById('settingsBtn');
+        if (settingsBtn) {
+            settingsBtn.addEventListener('click', () => this.openSettings());
+        }
+
+        // Close settings button
+        const closeSettingsBtn = document.getElementById('closeSettingsBtn');
+        if (closeSettingsBtn) {
+            closeSettingsBtn.addEventListener('click', () => this.closeSettings());
+        }
+
+        // Save settings button
+        const saveSettingsBtn = document.getElementById('saveSettingsBtn');
+        if (saveSettingsBtn) {
+            saveSettingsBtn.addEventListener('click', () => this.saveSettings());
+        }
+
+        // Reset settings button
+        const resetSettingsBtn = document.getElementById('resetSettingsBtn');
+        if (resetSettingsBtn) {
+            resetSettingsBtn.addEventListener('click', () => this.resetSettings());
+        }
+
+        // Max tokens range slider
+        const maxTokensRange = document.getElementById('maxTokensRange');
+        if (maxTokensRange) {
+            maxTokensRange.addEventListener('input', (e) => {
+                const maxTokensValue = document.getElementById('maxTokensValue');
+                if (maxTokensValue) {
+                    maxTokensValue.textContent = e.target.value;
+                }
+            });
+        }
+
+        // Dark mode toggle
+        const darkModeToggle = document.getElementById('darkModeToggle');
+        if (darkModeToggle) {
+            darkModeToggle.addEventListener('change', (e) => {
+                this.settings.darkMode = e.target.checked;
+                this.applyTheme();
+            });
+        }
+
+        // Close modal on outside click
+        const settingsModal = document.getElementById('settingsModal');
+        if (settingsModal) {
+            settingsModal.addEventListener('click', (e) => {
+                if (e.target.id === 'settingsModal') {
+                    this.closeSettings();
+                }
+            });
+        }
 
         // Example prompts
         document.querySelectorAll('.example-prompt').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 const prompt = e.target.dataset.prompt;
-                messageInput.value = prompt;
-                this.sendMessage();
+                const input = document.getElementById('messageInput');
+                if (input) {
+                    input.value = prompt;
+                    this.sendMessage();
+                }
             });
         });
 
-        // Header actions
-        document.getElementById('newChatBtn').addEventListener('click', () => this.newChat());
-        document.getElementById('clearBtn').addEventListener('click', () => this.clearChat());
-        document.getElementById('exportBtn').addEventListener('click', () => this.exportChat());
-
-        // Settings modal
-        document.getElementById('settingsBtn').addEventListener('click', () => this.openSettings());
-        document.getElementById('closeSettingsBtn').addEventListener('click', () => this.closeSettings());
-        document.getElementById('saveSettingsBtn').addEventListener('click', () => this.saveSettings());
-        document.getElementById('resetSettingsBtn').addEventListener('click', () => this.resetSettings());
-
-        // Settings controls
-        document.getElementById('maxTokensRange').addEventListener('input', (e) => {
-            document.getElementById('maxTokensValue').textContent = e.target.value;
-        });
-
-        document.getElementById('darkModeToggle').addEventListener('change', (e) => {
-            this.settings.darkMode = e.target.checked;
-            this.applyTheme();
-        });
-
-        // Close modal on outside click
-        document.getElementById('settingsModal').addEventListener('click', (e) => {
-            if (e.target.id === 'settingsModal') {
-                this.closeSettings();
-            }
-        });
+        console.log('Event listeners bound');
     }
 
     autoResize(textarea) {
@@ -109,7 +160,10 @@ class ChatApp {
         // Clear input
         input.value = '';
         input.style.height = 'auto';
-        document.getElementById('charCount').textContent = '0 characters';
+        const charCount = document.getElementById('charCount');
+        if (charCount) {
+            charCount.textContent = '0 characters';
+        }
 
         // Hide welcome screen
         const welcomeScreen = document.querySelector('.welcome-screen');
@@ -123,35 +177,11 @@ class ChatApp {
         // Show typing indicator
         this.showTypingIndicator();
 
-        // Update status
-        this.updateStatus('thinking', 'Thinking...');
-
-        // Simulate API call (replace with actual backend call)
         try {
             console.log('Calling backend...');
-            const response = await this.callBackend(message);
-            console.log('Got response:', response.substring(0, 100));
-            this.removeTypingIndicator();
-            this.addMessage('assistant', response);
-            this.updateStatus('ready', 'Ready');
-            this.updateStats();
-        } catch (error) {
-            console.log('Error caught:', error);
-            this.removeTypingIndicator();
-            this.addMessage('assistant', 'Sorry, I encountered an error. Please try again.');
-            this.updateStatus('error', 'Error');
-            console.error('Error:', error);
-        }
-    }
-
-    async callBackend(message) {
-        // Call the real backend API
-        try {
             const response = await fetch('/api/chat', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ message })
             });
 
@@ -160,34 +190,29 @@ class ChatApp {
             }
 
             const data = await response.json();
-            
+            console.log('Got response:', data);
+
+            this.removeTypingIndicator();
+
             if (data.success) {
-                // Update stats from backend
+                this.addMessage('assistant', data.response);
                 if (data.stats) {
                     this.updateStatsFromBackend(data.stats);
                 }
-                return data.response;
             } else {
                 throw new Error(data.error || 'Unknown error');
             }
         } catch (error) {
-            console.error('Backend error:', error);
-            throw error;
+            console.error('Error:', error);
+            this.removeTypingIndicator();
+            this.addMessage('assistant', 'Sorry, I encountered an error: ' + error.message);
         }
-    }
 
-    updateStatsFromBackend(stats) {
-        // Update UI with real backend stats
-        if (stats.tokens_retained !== undefined && stats.max_tokens) {
-            document.getElementById('tokensUsed').textContent = 
-                `${stats.tokens_retained}/${this.settings.maxTokens}`;
-        }
-        // Message count is tracked locally
-        document.getElementById('messageCount').textContent = this.messages.length;
-        document.getElementById('policyName').textContent = this.settings.policy;
+        this.updateStats();
     }
 
     addMessage(role, content) {
+        console.log('Adding message:', role, content.substring(0, 50));
         const messagesContainer = document.getElementById('chatMessages');
         const messageDiv = document.createElement('div');
         messageDiv.className = `message ${role}`;
@@ -201,52 +226,50 @@ class ChatApp {
 
         const bubble = document.createElement('div');
         bubble.className = 'message-bubble';
-        
+
         // Parse thinking/reasoning if present (for AI messages)
         if (role === 'assistant' && content.includes('**Thinking:**')) {
-            console.log('Found thinking section in response');
+            console.log('Found thinking section');
             bubble.classList.add('has-thinking');
-            
+
             // Split thinking and response
             const parts = content.split('**Thinking:**');
             if (parts.length > 1) {
                 const thinkingAndResponse = parts[1].split('\n\n');
                 const thinking = thinkingAndResponse[0].trim();
                 const response = thinkingAndResponse.slice(1).join('\n\n').trim();
-                
+
                 console.log('Thinking:', thinking);
-                console.log('Response:', response.substring(0, 100));
-                
+                console.log('Response:', response.substring(0, 50));
+
                 // Create thinking section
                 const thinkingSection = document.createElement('div');
                 thinkingSection.className = 'thinking-section';
                 thinkingSection.innerHTML = `
-                    <h4>AI Reasoning Process</h4>
+                    <h4>💭 AI Reasoning Process</h4>
                     <div class="thinking-content">${this.escapeHtml(thinking)}</div>
                 `;
-                
+
                 // Create response section
                 const responseSection = document.createElement('div');
                 responseSection.className = 'response-section';
                 responseSection.innerHTML = this.formatMarkdown(response);
-                
+
                 bubble.appendChild(thinkingSection);
                 bubble.appendChild(responseSection);
-                console.log('Thinking section created successfully');
             } else {
                 bubble.innerHTML = this.formatMarkdown(content);
             }
         } else {
             // Regular message
-            console.log('No thinking section found, role:', role);
             bubble.innerHTML = this.formatMarkdown(content);
         }
 
         const time = document.createElement('div');
         time.className = 'message-time';
-        time.textContent = new Date().toLocaleTimeString('en-US', { 
-            hour: '2-digit', 
-            minute: '2-digit' 
+        time.textContent = new Date().toLocaleTimeString('en-US', {
+            hour: '2-digit',
+            minute: '2-digit'
         });
 
         contentDiv.appendChild(bubble);
@@ -258,7 +281,7 @@ class ChatApp {
         this.messages.push({ role, content, timestamp: Date.now() });
         this.scrollToBottom();
     }
-    
+
     formatMarkdown(text) {
         // Simple markdown formatting
         return text
@@ -269,7 +292,7 @@ class ChatApp {
             .replace(/`(.*?)`/g, '<code>$1</code>')
             .replace(/\n/g, '<br>');
     }
-    
+
     escapeHtml(text) {
         const div = document.createElement('div');
         div.textContent = text;
@@ -279,26 +302,11 @@ class ChatApp {
     showTypingIndicator() {
         const messagesContainer = document.getElementById('chatMessages');
         const typingDiv = document.createElement('div');
-        typingDiv.className = 'message assistant typing-message';
+        typingDiv.className = 'typing-indicator';
         typingDiv.id = 'typingIndicator';
-
-        const avatar = document.createElement('div');
-        avatar.className = 'message-avatar';
-        avatar.textContent = 'AI';
-
-        const contentDiv = document.createElement('div');
-        contentDiv.className = 'message-content';
-
-        const bubble = document.createElement('div');
-        bubble.className = 'message-bubble typing-indicator';
-        bubble.innerHTML = '<div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div>';
-
-        contentDiv.appendChild(bubble);
-        typingDiv.appendChild(avatar);
-        typingDiv.appendChild(contentDiv);
-
+        typingDiv.innerHTML = '<span></span><span></span><span></span>';
         messagesContainer.appendChild(typingDiv);
-        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        this.scrollToBottom();
     }
 
     removeTypingIndicator() {
@@ -308,35 +316,28 @@ class ChatApp {
         }
     }
 
-    updateStatus(type, text) {
-        const badge = document.getElementById('statusBadge');
-        badge.innerHTML = `<span class="status-dot"></span>${text}`;
-        
-        badge.className = 'status-badge';
-        if (type === 'thinking') {
-            badge.style.background = 'var(--warning)';
-        } else if (type === 'error') {
-            badge.style.background = 'var(--error)';
-        } else {
-            badge.style.background = 'var(--success)';
-        }
+    scrollToBottom() {
+        const messagesContainer = document.getElementById('chatMessages');
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
     }
 
     updateStats() {
-        // Simulate stats - Replace with actual backend stats
-        const tokensUsed = Math.min(this.messages.length * 20, this.settings.maxTokens);
-        document.getElementById('tokensUsed').textContent = `${tokensUsed}/${this.settings.maxTokens}`;
-        document.getElementById('messageCount').textContent = this.messages.length;
-        document.getElementById('policyName').textContent = this.settings.policy;
+        const messageCount = document.getElementById('messageCount');
+        if (messageCount) {
+            messageCount.textContent = this.messages.length;
+        }
+    }
+
+    updateStatsFromBackend(stats) {
+        if (stats.tokens_retained !== undefined) {
+            const tokensUsed = document.getElementById('tokensUsed');
+            if (tokensUsed) {
+                tokensUsed.textContent = `${stats.tokens_retained}/${this.settings.maxTokens}`;
+            }
+        }
     }
 
     newChat() {
-        if (this.messages.length > 0) {
-            if (!confirm('Start a new chat? Current conversation will be saved to history.')) {
-                return;
-            }
-        }
-
         this.messages = [];
         const messagesContainer = document.getElementById('chatMessages');
         messagesContainer.innerHTML = `
@@ -382,37 +383,34 @@ class ChatApp {
                 </div>
             </div>
         `;
-
+        
         // Re-bind example prompt events
         document.querySelectorAll('.example-prompt').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 const prompt = e.target.dataset.prompt;
-                document.getElementById('messageInput').value = prompt;
-                this.sendMessage();
+                const input = document.getElementById('messageInput');
+                if (input) {
+                    input.value = prompt;
+                    this.sendMessage();
+                }
             });
         });
-
+        
         this.updateStats();
+        console.log('New chat started');
     }
 
     clearChat() {
-        if (this.messages.length === 0) return;
-
-        if (confirm('Clear all messages? This cannot be undone.')) {
+        if (confirm('Are you sure you want to clear the chat history?')) {
             this.newChat();
         }
     }
 
     exportChat() {
-        if (this.messages.length === 0) {
-            alert('No messages to export');
-            return;
-        }
-
         const chatData = {
+            messages: this.messages,
             timestamp: new Date().toISOString(),
-            settings: this.settings,
-            messages: this.messages
+            settings: this.settings
         };
 
         const blob = new Blob([JSON.stringify(chatData, null, 2)], { type: 'application/json' });
@@ -420,43 +418,66 @@ class ChatApp {
         const a = document.createElement('a');
         a.href = url;
         a.download = `chat-export-${Date.now()}.json`;
+        document.body.appendChild(a);
         a.click();
+        document.body.removeChild(a);
         URL.revokeObjectURL(url);
+
+        console.log('Chat exported');
     }
 
     openSettings() {
         const modal = document.getElementById('settingsModal');
-        modal.classList.add('active');
+        if (modal) {
+            modal.style.display = 'flex';
+            
+            // Load current settings into form
+            const policySelect = document.getElementById('policySelect');
+            const maxTokensRange = document.getElementById('maxTokensRange');
+            const maxTokensValue = document.getElementById('maxTokensValue');
+            const modelSelect = document.getElementById('modelSelect');
+            const telemetryToggle = document.getElementById('telemetryToggle');
+            const darkModeToggle = document.getElementById('darkModeToggle');
 
-        // Populate current settings
-        document.getElementById('policySelect').value = this.settings.policy;
-        document.getElementById('maxTokensRange').value = this.settings.maxTokens;
-        document.getElementById('maxTokensValue').textContent = this.settings.maxTokens;
-        document.getElementById('modelSelect').value = this.settings.model;
-        document.getElementById('telemetryToggle').checked = this.settings.telemetry;
-        document.getElementById('darkModeToggle').checked = this.settings.darkMode;
+            if (policySelect) policySelect.value = this.settings.policy;
+            if (maxTokensRange) maxTokensRange.value = this.settings.maxTokens;
+            if (maxTokensValue) maxTokensValue.textContent = this.settings.maxTokens;
+            if (modelSelect) modelSelect.value = this.settings.model;
+            if (telemetryToggle) telemetryToggle.checked = this.settings.telemetry !== false;
+            if (darkModeToggle) darkModeToggle.checked = this.settings.darkMode;
+        }
     }
 
     closeSettings() {
         const modal = document.getElementById('settingsModal');
-        modal.classList.remove('active');
+        if (modal) {
+            modal.style.display = 'none';
+        }
     }
 
     saveSettings() {
-        this.settings.policy = document.getElementById('policySelect').value;
-        this.settings.maxTokens = parseInt(document.getElementById('maxTokensRange').value);
-        this.settings.model = document.getElementById('modelSelect').value;
-        this.settings.telemetry = document.getElementById('telemetryToggle').checked;
-        this.settings.darkMode = document.getElementById('darkModeToggle').checked;
+        const policySelect = document.getElementById('policySelect');
+        const maxTokensRange = document.getElementById('maxTokensRange');
+        const modelSelect = document.getElementById('modelSelect');
+        const telemetryToggle = document.getElementById('telemetryToggle');
+        const darkModeToggle = document.getElementById('darkModeToggle');
 
-        localStorage.setItem('chatSettings', JSON.stringify(this.settings));
-        this.updateStats();
+        if (policySelect) this.settings.policy = policySelect.value;
+        if (maxTokensRange) this.settings.maxTokens = parseInt(maxTokensRange.value);
+        if (modelSelect) this.settings.model = modelSelect.value;
+        if (telemetryToggle) this.settings.telemetry = telemetryToggle.checked;
+        if (darkModeToggle) this.settings.darkMode = darkModeToggle.checked;
+
+        // Update UI
+        const policyName = document.getElementById('policyName');
+        if (policyName) {
+            policyName.textContent = this.settings.policy;
+        }
+
         this.applyTheme();
         this.closeSettings();
 
-        // Show success message
-        this.updateStatus('ready', 'Settings saved');
-        setTimeout(() => this.updateStatus('ready', 'Ready'), 2000);
+        console.log('Settings saved:', this.settings);
     }
 
     resetSettings() {
@@ -464,18 +485,13 @@ class ChatApp {
             this.settings = {
                 policy: 'sliding',
                 maxTokens: 512,
-                model: 'gpt2',
+                model: 'deepseek-chat',
                 telemetry: true,
                 darkMode: false
             };
-            this.openSettings(); // Refresh modal
-        }
-    }
 
-    loadSettings() {
-        const saved = localStorage.getItem('chatSettings');
-        if (saved) {
-            this.settings = JSON.parse(saved);
+            this.openSettings(); // Reload form with defaults
+            console.log('Settings reset to defaults');
         }
     }
 
@@ -492,5 +508,5 @@ class ChatApp {
 document.addEventListener('DOMContentLoaded', () => {
     console.log('DOM loaded, initializing ChatApp...');
     window.chatApp = new ChatApp();
-    console.log('ChatApp initialized:', window.chatApp);
+    console.log('ChatApp ready:', window.chatApp);
 });
