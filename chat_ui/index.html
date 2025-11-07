@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Finite Memory AI - Chat</title>
-    <link rel="stylesheet" href="styles.css?v=3.1">
+    <link rel="stylesheet" href="styles.css?v=3.2">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -164,7 +164,7 @@
             <div class="modal-content">
                 <div class="modal-header">
                     <h2>Settings</h2>
-                    <button class="close-btn" id="closeSettingsBtn">
+                    <button class="close-btn" id="closeSettingsBtn" aria-label="Close settings" title="Close settings">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
                             <line x1="18" y1="6" x2="6" y2="18"></line>
                             <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -173,8 +173,8 @@
                 </div>
                 <div class="modal-body">
                     <div class="setting-group">
-                        <label class="setting-label">Memory Policy</label>
-                        <select class="setting-select" id="policySelect">
+                        <label class="setting-label" for="policySelect">Memory Policy</label>
+                        <select class="setting-select" id="policySelect" aria-label="Memory Policy" title="Select memory policy">
                             <option value="sliding">Sliding Window - Fast & Simple</option>
                             <option value="importance">Importance - Smart Retention</option>
                             <option value="semantic">Semantic - Topic Clustering</option>
@@ -185,15 +185,15 @@
                     </div>
 
                     <div class="setting-group">
-                        <label class="setting-label">Max Tokens</label>
-                        <input type="range" class="setting-range" id="maxTokensRange" min="512" max="16384" step="512" value="8192">
+                        <label class="setting-label" for="maxTokensRange">Max Tokens</label>
+                        <input type="range" class="setting-range" id="maxTokensRange" min="512" max="16384" step="512" value="8192" aria-label="Max Tokens" title="Adjust maximum tokens">
                         <div class="range-value" id="maxTokensValue">8192</div>
                         <p class="setting-description">Maximum context window size (512-16384 tokens)</p>
                     </div>
 
                     <div class="setting-group">
-                        <label class="setting-label">Model</label>
-                        <select class="setting-select" id="modelSelect">
+                        <label class="setting-label" for="modelSelect">Model</label>
+                        <select class="setting-select" id="modelSelect" aria-label="Model Selection" title="Select AI model">
                             <option value="gpt2">GPT-2 (Local)</option>
                             <option value="gpt2-medium">GPT-2 Medium (Local)</option>
                             <option value="gpt2-large">GPT-2 Large (Local)</option>
