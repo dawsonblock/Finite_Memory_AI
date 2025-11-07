@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Finite Memory AI - Chat</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <div class="logo">
+                    <svg class="logo-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                    </svg>
+                    <span class="logo-text">Finite Memory AI</span>
+                </div>
+                <button class="new-chat-btn" id="newChatBtn">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                        <line x1="12" y1="5" x2="12" y2="19"></line>
+                        <line x1="5" y1="12" x2="19" y2="12"></line>
+                    </svg>
+                    New Chat
+                </button>
+            </div>
+
+            <div class="chat-history" id="chatHistory">
+                <!-- Chat history items will be added here -->
+            </div>
+
+            <div class="sidebar-footer">
+                <div class="stats-panel">
+                    <div class="stat-item">
+                        <span class="stat-label">Tokens</span>
+                        <span class="stat-value" id="tokensUsed">0/512</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Messages</span>
+                        <span class="stat-value" id="messageCount">0</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Policy</span>
+                        <span class="stat-value" id="policyName">sliding</span>
+                    </div>
+                </div>
+                <button class="settings-btn" id="settingsBtn">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                        <circle cx="12" cy="12" r="3"></circle>
+                        <path d="M12 1v6m0 6v6m-9-9h6m6 0h6"></path>
+                    </svg>
+                    Settings
+                </button>
+            </div>
+        </aside>
+
+        <!-- Main Chat Area -->
+        <main class="chat-main">
+            <div class="chat-header">
+                <div class="header-info">
+                    <h1 class="chat-title">Chat with AI</h1>
+                    <span class="status-badge" id="statusBadge">
+                        <span class="status-dot"></span>
+                        Ready
+                    </span>
+                </div>
+                <div class="header-actions">
+                    <button class="icon-btn" id="exportBtn" title="Export Chat">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="7 10 12 15 17 10"></polyline>
+                            <line x1="12" y1="15" x2="12" y2="3"></line>
+                        </svg>
+                    </button>
+                    <button class="icon-btn" id="clearBtn" title="Clear Chat">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                            <polyline points="3 6 5 6 21 6"></polyline>
+                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+
+            <div class="chat-messages" id="chatMessages">
+                <div class="welcome-screen">
+                    <div class="welcome-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                        </svg>
+                    </div>
+                    <h2>Welcome to Finite Memory AI</h2>
+                    <p>Start a conversation with intelligent memory management</p>
+                    <div class="feature-grid">
+                        <div class="feature-card">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                                <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"></path>
+                            </svg>
+                            <span>Fast & Efficient</span>
+                        </div>
+                        <div class="feature-card">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                                <path d="M12 2v20M2 12h20"></path>
+                            </svg>
+                            <span>Smart Context</span>
+                        </div>
+                        <div class="feature-card">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                                <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+                            </svg>
+                            <span>Real-time Stats</span>
+                        </div>
+                    </div>
+                    <div class="example-prompts">
+                        <p class="example-title">Try asking:</p>
+                        <button class="example-prompt" data-prompt="Explain quantum computing in simple terms">
+                            Explain quantum computing in simple terms
+                        </button>
+                        <button class="example-prompt" data-prompt="Write a Python function to sort a list">
+                            Write a Python function to sort a list
+                        </button>
+                        <button class="example-prompt" data-prompt="What are the benefits of AI?">
+                            What are the benefits of AI?
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="chat-input-container">
+                <div class="input-wrapper">
+                    <textarea 
+                        id="messageInput" 
+                        class="message-input" 
+                        placeholder="Type your message here..."
+                        rows="1"
+                    ></textarea>
+                    <div class="input-actions">
+                        <button class="icon-btn" id="attachBtn" title="Attach file">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                                <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path>
+                            </svg>
+                        </button>
+                        <button class="send-btn" id="sendBtn">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                                <line x1="22" y1="2" x2="11" y2="13"></line>
+                                <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                            </svg>
+                            Send
+                        </button>
+                    </div>
+                </div>
+                <div class="input-footer">
+                    <span class="char-count" id="charCount">0 characters</span>
+                    <span class="tip">Press Enter to send, Shift+Enter for new line</span>
+                </div>
+            </div>
+        </main>
+
+        <!-- Settings Modal -->
+        <div class="modal" id="settingsModal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2>Settings</h2>
+                    <button class="close-btn" id="closeSettingsBtn">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                            <line x1="18" y1="6" x2="6" y2="18"></line>
+                            <line x1="6" y1="6" x2="18" y2="18"></line>
+                        </svg>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <div class="setting-group">
+                        <label class="setting-label">Memory Policy</label>
+                        <select class="setting-select" id="policySelect">
+                            <option value="sliding">Sliding Window - Fast & Simple</option>
+                            <option value="importance">Importance - Smart Retention</option>
+                            <option value="semantic">Semantic - Topic Clustering</option>
+                            <option value="rolling_summary">Rolling Summary - Long Conversations</option>
+                            <option value="hybrid">Hybrid - Best of All</option>
+                        </select>
+                        <p class="setting-description">Choose how the AI manages conversation context</p>
+                    </div>
+
+                    <div class="setting-group">
+                        <label class="setting-label">Max Tokens</label>
+                        <input type="range" class="setting-range" id="maxTokensRange" min="256" max="4096" step="256" value="512">
+                        <div class="range-value" id="maxTokensValue">512</div>
+                        <p class="setting-description">Maximum context window size</p>
+                    </div>
+
+                    <div class="setting-group">
+                        <label class="setting-label">Model</label>
+                        <select class="setting-select" id="modelSelect">
+                            <option value="gpt2">GPT-2 (Local)</option>
+                            <option value="gpt2-medium">GPT-2 Medium (Local)</option>
+                            <option value="gpt2-large">GPT-2 Large (Local)</option>
+                        </select>
+                        <p class="setting-description">Select the language model to use</p>
+                    </div>
+
+                    <div class="setting-group">
+                        <label class="setting-toggle">
+                            <input type="checkbox" id="telemetryToggle" checked>
+                            <span class="toggle-slider"></span>
+                            <span class="toggle-label">Enable Telemetry</span>
+                        </label>
+                        <p class="setting-description">Track performance metrics and statistics</p>
+                    </div>
+
+                    <div class="setting-group">
+                        <label class="setting-toggle">
+                            <input type="checkbox" id="darkModeToggle">
+                            <span class="toggle-slider"></span>
+                            <span class="toggle-label">Dark Mode</span>
+                        </label>
+                        <p class="setting-description">Switch between light and dark themes</p>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" id="resetSettingsBtn">Reset to Defaults</button>
+                    <button class="btn btn-primary" id="saveSettingsBtn">Save Changes</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
