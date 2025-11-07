@@ -350,11 +350,35 @@ class ChatApp {
     }
 
     updateStatsFromBackend(stats) {
+        console.log('Updating stats from backend:', stats);
+        
+        // Update tokens
         if (stats.tokens_retained !== undefined) {
             const tokensUsed = document.getElementById('tokensUsed');
             if (tokensUsed) {
                 tokensUsed.textContent = `${stats.tokens_retained}/${this.settings.maxTokens}`;
             }
+        }
+        
+        // Update message count
+        const messageCount = document.getElementById('messageCount');
+        if (messageCount) {
+            messageCount.textContent = this.messages.length;
+        }
+        
+        // Show eviction notification if any
+        if (stats.evictions && stats.evictions > 0) {
+            const totalEvictions = stats.evictions;
+            this.showNotification(
+                `Memory limit reached! Evicted ${totalEvictions} old message${totalEvictions > 1 ? 's' : ''} to stay within ${this.settings.maxTokens} token limit.`,
+                'warning'
+            );
+        }
+        
+        // Update policy display
+        const policyName = document.getElementById('policyName');
+        if (policyName && this.settings.policy) {
+            policyName.textContent = this.settings.policy;
         }
     }
 
@@ -528,36 +552,48 @@ class ChatApp {
         // Create hidden file input
         const fileInput = document.createElement('input');
         fileInput.type = 'file';
-        fileInput.accept = '.txt,.md,.json,.csv,.log,.py,.js,.html,.css';
+        fileInput.accept = '*/*'; // Accept all file types
         fileInput.style.display = 'none';
         
         fileInput.addEventListener('change', async (e) => {
             const file = e.target.files[0];
             if (!file) return;
 
-            // Check file size (max 1MB)
-            if (file.size > 1024 * 1024) {
-                alert('File too large! Maximum size is 1MB.');
+            // Check file size (max 10MB)
+            if (file.size > 10 * 1024 * 1024) {
+                alert('File too large! Maximum size is 10MB.');
                 return;
             }
 
             try {
-                // Read file content
-                const text = await file.text();
-                
-                // Add file content to input
                 const input = document.getElementById('messageInput');
-                if (input) {
-                    const filePrompt = `I've uploaded a file named "${file.name}":\n\n\`\`\`\n${text.substring(0, 2000)}${text.length > 2000 ? '\n... (truncated)' : ''}\n\`\`\`\n\nPlease analyze this file.`;
-                    input.value = filePrompt;
-                    this.autoResize(input);
+                if (!input) return;
+
+                // Detect file type
+                const isTextFile = this.isTextFile(file.name);
+                const isBinaryFile = !isTextFile;
+
+                if (isTextFile) {
+                    // Read text files
+                    const text = await file.text();
+                    const preview = text.substring(0, 3000);
+                    const truncated = text.length > 3000;
                     
-                    // Show notification
-                    this.showNotification(`File "${file.name}" loaded successfully!`, 'success');
+                    const filePrompt = `I've uploaded a text file named "${file.name}" (${this.formatFileSize(file.size)}):\n\n\`\`\`\n${preview}${truncated ? '\n... (truncated, showing first 3000 characters)' : ''}\n\`\`\`\n\nPlease analyze this file.`;
+                    input.value = filePrompt;
+                } else {
+                    // Handle binary files (images, zip, etc.)
+                    const fileInfo = this.getFileInfo(file);
+                    const filePrompt = `I've uploaded a ${fileInfo.type} file:\n\n**File Name:** ${file.name}\n**File Size:** ${this.formatFileSize(file.size)}\n**File Type:** ${file.type || 'unknown'}\n**Extension:** ${fileInfo.extension}\n\nPlease provide information about this type of file and what you can help me with regarding it.`;
+                    input.value = filePrompt;
                 }
+
+                this.autoResize(input);
+                this.showNotification(`File "${file.name}" (${this.formatFileSize(file.size)}) loaded!`, 'success');
+                
             } catch (error) {
                 console.error('Error reading file:', error);
-                alert('Error reading file: ' + error.message);
+                this.showNotification('Error reading file: ' + error.message, 'error');
             }
             
             // Clean up
@@ -569,17 +605,81 @@ class ChatApp {
         fileInput.click();
     }
 
+    isTextFile(filename) {
+        const textExtensions = [
+            'txt', 'md', 'json', 'csv', 'log', 'xml', 'html', 'htm', 'css', 'js', 'ts', 
+            'jsx', 'tsx', 'py', 'java', 'c', 'cpp', 'h', 'hpp', 'cs', 'php', 'rb', 'go',
+            'rs', 'swift', 'kt', 'scala', 'sh', 'bash', 'yml', 'yaml', 'toml', 'ini',
+            'conf', 'config', 'sql', 'r', 'matlab', 'm', 'vue', 'svelte', 'dockerfile'
+        ];
+        const ext = filename.split('.').pop().toLowerCase();
+        return textExtensions.includes(ext);
+    }
+
+    getFileInfo(file) {
+        const ext = file.name.split('.').pop().toLowerCase();
+        const typeMap = {
+            'zip': 'compressed archive',
+            'rar': 'compressed archive',
+            '7z': 'compressed archive',
+            'tar': 'archive',
+            'gz': 'compressed archive',
+            'pdf': 'PDF document',
+            'doc': 'Word document',
+            'docx': 'Word document',
+            'xls': 'Excel spreadsheet',
+            'xlsx': 'Excel spreadsheet',
+            'ppt': 'PowerPoint presentation',
+            'pptx': 'PowerPoint presentation',
+            'jpg': 'image',
+            'jpeg': 'image',
+            'png': 'image',
+            'gif': 'image',
+            'bmp': 'image',
+            'svg': 'vector image',
+            'webp': 'image',
+            'mp3': 'audio',
+            'wav': 'audio',
+            'mp4': 'video',
+            'avi': 'video',
+            'mov': 'video',
+            'exe': 'executable',
+            'dll': 'library',
+            'so': 'library',
+            'dylib': 'library'
+        };
+        
+        return {
+            extension: ext,
+            type: typeMap[ext] || 'binary'
+        };
+    }
+
+    formatFileSize(bytes) {
+        if (bytes < 1024) return bytes + ' B';
+        if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+        return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+    }
+
     showNotification(message, type = 'info') {
         // Create notification element
         const notification = document.createElement('div');
         notification.className = `notification notification-${type}`;
         notification.textContent = message;
+        
+        const colors = {
+            'success': '#10b981',
+            'error': '#ef4444',
+            'info': '#4f46e5',
+            'warning': '#f59e0b'
+        };
+        
         notification.style.cssText = `
             position: fixed;
             top: 20px;
             right: 20px;
             padding: 12px 20px;
-            background: ${type === 'success' ? '#10b981' : '#4f46e5'};
+            background: ${colors[type] || colors.info};
             color: white;
             border-radius: 8px;
             box-shadow: 0 4px 12px rgba(0,0,0,0.15);

@@ -386,18 +386,41 @@ def reset():
         }), 500
 
 
+@app.route('/api/memory', methods=['GET'])
+def get_memory_status():
+    """Get detailed memory status"""
+    if llm is None:
+        return jsonify({'error': 'LLM not initialized'}), 500
+    
+    return jsonify({
+        'conversation_history_length': len(llm.conversation_history),
+        'conversation_history': [
+            {
+                'role': entry.get('role'),
+                'tokens': entry.get('tokens', 0),
+                'content_preview': entry.get('content', '')[:50] + '...'
+            }
+            for entry in llm.conversation_history
+        ],
+        'stats': {
+            'tokens_seen': llm.stats.tokens_seen,
+            'tokens_retained': llm.stats.tokens_retained,
+            'evictions': llm.stats.evictions,
+            'compression_ratio': llm.stats.compression_ratio
+        },
+        'settings': {
+            'max_tokens': llm.max_tokens,
+            'policy': llm.memory_policy
+        }
+    })
+
+
 @app.route('/api/stats', methods=['GET'])
 def get_stats():
-    """Get current statistics"""
+    """Get current LLM statistics"""
     try:
         if llm is None:
-            return jsonify({
-                'tokens_seen': 0,
-                'tokens_retained': 0,
-                'evictions': 0,
-                'compression_ratio': 1.0,
-                'policy_calls': 0
-            })
+            return jsonify({'error': 'LLM not initialized'}), 500
         
         stats = llm.stats
         
@@ -410,22 +433,9 @@ def get_stats():
             'max_tokens': current_settings['max_tokens'],
             'policy': current_settings['policy']
         })
-        
     except Exception as e:
         print(f"Error getting stats: {e}")
-        return jsonify({
-            'error': str(e)
-        }), 500
-
-
-@app.route('/api/health', methods=['GET'])
-def health():
-    """Health check endpoint"""
-    return jsonify({
-        'status': 'healthy',
-        'llm_initialized': llm is not None,
-        'settings': current_settings
-    })
+        return jsonify({'error': str(e)}), 500
 
 
 if __name__ == '__main__':
