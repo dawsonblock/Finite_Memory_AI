@@ -34,12 +34,16 @@ class ChatApp {
 
         messageInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
+                console.log('Enter key pressed!');
                 e.preventDefault();
                 this.sendMessage();
             }
         });
 
-        sendBtn.addEventListener('click', () => this.sendMessage());
+        sendBtn.addEventListener('click', () => {
+            console.log('Send button clicked!');
+            this.sendMessage();
+        });
 
         // Example prompts
         document.querySelectorAll('.example-prompt').forEach(btn => {
@@ -85,10 +89,16 @@ class ChatApp {
     }
 
     async sendMessage() {
+        console.log('sendMessage called');
         const input = document.getElementById('messageInput');
         const message = input.value.trim();
 
-        if (!message) return;
+        if (!message) {
+            console.log('Empty message, returning');
+            return;
+        }
+
+        console.log('Sending message:', message);
 
         // Clear input
         input.value = '';
@@ -112,12 +122,15 @@ class ChatApp {
 
         // Simulate API call (replace with actual backend call)
         try {
+            console.log('Calling backend...');
             const response = await this.callBackend(message);
+            console.log('Got response:', response.substring(0, 100));
             this.removeTypingIndicator();
             this.addMessage('assistant', response);
             this.updateStatus('ready', 'Ready');
             this.updateStats();
         } catch (error) {
+            console.log('Error caught:', error);
             this.removeTypingIndicator();
             this.addMessage('assistant', 'Sorry, I encountered an error. Please try again.');
             this.updateStatus('error', 'Error');
@@ -471,5 +484,7 @@ class ChatApp {
 
 // Initialize app when DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
+    console.log('DOM loaded, initializing ChatApp...');
     window.chatApp = new ChatApp();
+    console.log('ChatApp initialized:', window.chatApp);
 });
