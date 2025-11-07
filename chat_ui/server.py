@@ -23,7 +23,7 @@ CORS(app)
 llm = None
 current_settings = {
     'policy': 'sliding',
-    'max_tokens': 512,
+    'max_tokens': 8192,  # Increased for longer conversations
     'model': 'gpt2'
 }
 
@@ -83,8 +83,15 @@ def call_deepseek_direct(messages, max_tokens=1000):
 
 def generate_thinking(question, response):
     """Generate a thinking process based on the question and response"""
-    # Simple heuristic-based thinking generation
+    # Only generate thinking if response is substantial
+    if len(response.strip()) < 50:
+        return ""  # Don't add thinking for very short responses
+    
     question_lower = question.lower()
+    
+    # Don't add generic thinking for continuation requests
+    if any(word in question_lower for word in ['continue', 'more', 'go on', 'keep going']):
+        return ""  # Let the actual response speak for itself
     
     if any(word in question_lower for word in ['explain', 'what is', 'how does', 'why']):
         return f"I need to explain '{question[:50]}...' in a clear and understandable way. I'll break down the concept and use analogies if helpful."
@@ -92,8 +99,6 @@ def generate_thinking(question, response):
         return f"This is a comparison question. I'll analyze both sides and highlight the key differences and similarities."
     elif any(word in question_lower for word in ['write', 'create', 'code', 'program']):
         return f"This is a coding/creation task. I'll structure the solution logically and include necessary details."
-    elif any(word in question_lower for word in ['continue', 'more', 'go on']):
-        return "Continuing from where I left off, maintaining context and flow."
     elif len(response) > 500:
         return f"This is a complex question requiring a detailed response. I'll organize my answer with clear sections and examples."
     else:
@@ -245,8 +250,8 @@ def chat():
             
             print(f"Sending conversation to DeepSeek: {len(messages)} messages")
             
-            # Call DeepSeek directly
-            response_text = call_deepseek_direct(messages)
+            # Call DeepSeek directly with higher token limit for full responses
+            response_text = call_deepseek_direct(messages, max_tokens=2000)
             
             # Calculate tokens (rough estimate: ~4 chars per token)
             user_tokens = len(message) // 4

@@ -5,7 +5,7 @@ class ChatApp {
         this.messages = [];
         this.settings = {
             policy: 'sliding',
-            maxTokens: 512,
+            maxTokens: 8192,
             model: 'deepseek-chat',
             darkMode: false
         };
@@ -529,7 +529,7 @@ class ChatApp {
         if (confirm('Reset all settings to defaults?')) {
             this.settings = {
                 policy: 'sliding',
-                maxTokens: 512,
+                maxTokens: 8192,
                 model: 'deepseek-chat',
                 telemetry: true,
                 darkMode: false

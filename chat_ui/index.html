@@ -186,9 +186,9 @@
 
                     <div class="setting-group">
                         <label class="setting-label">Max Tokens</label>
-                        <input type="range" class="setting-range" id="maxTokensRange" min="256" max="4096" step="256" value="512">
-                        <div class="range-value" id="maxTokensValue">512</div>
-                        <p class="setting-description">Maximum context window size</p>
+                        <input type="range" class="setting-range" id="maxTokensRange" min="512" max="16384" step="512" value="8192">
+                        <div class="range-value" id="maxTokensValue">8192</div>
+                        <p class="setting-description">Maximum context window size (512-16384 tokens)</p>
                     </div>
 
                     <div class="setting-group">
@@ -227,6 +227,6 @@
         </div>
     </div>
 
-    <script src="app_working.js?v=2.1"></script>
+    <script src="app_working.js?v=2.2"></script>
 </body>
 </html>
