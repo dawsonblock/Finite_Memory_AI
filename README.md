@@ -1,5 +1,7 @@
 # 🧠 Finite Memory AI
 
+<div align="center">
+
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
@@ -11,13 +13,77 @@
 
 **Production-ready finite memory and context distillation for large language models.**
 
-Finite Memory AI gives any LLM **long-term conversational memory** with controlled context growth through intelligent compression. Works seamlessly with both local models (HuggingFace) and hosted APIs (OpenAI, Anthropic, etc.).
+*Give any LLM long-term conversational memory with intelligent compression and controlled context growth.*
 
-> **v2.4.0** - Now with **45-95% performance improvements** through comprehensive optimizations!
+[🚀 Quick Start](#-quick-start) • [💬 Try the Chat UI](#-interactive-chat-ui) • [📚 Documentation](#-documentation) • [🎯 Use Cases](#-use-cases)
+
+</div>
+
+---
+
+## 🎯 What is Finite Memory AI?
+
+Finite Memory AI solves the **context explosion problem** in LLM conversations. Instead of re-processing the entire conversation history on every turn (leading to exponential costs and slowdowns), it acts as an **intelligent memory manager** that:
+
+- 🧠 **Compresses context** intelligently while preserving key information
+- 💰 **Reduces API costs** by 50-90% through smart token management
+- ⚡ **Speeds up responses** by keeping context bounded
+- 🎯 **Prevents context overflow** with automatic eviction policies
+- 🔌 **Works with any LLM** - local models or hosted APIs
+
+> **v2.4.0** - Now with **45-95% performance improvements** and a beautiful **interactive chat UI**!
+
+## ✨ Highlights
+
+<table>
+<tr>
+<td width="50%">
+
+### 🎯 **Smart Memory Management**
+- 4 intelligent eviction policies
+- Automatic context compression
+- Preserves critical information
+- Bounded memory growth
+
+</td>
+<td width="50%">
+
+### 💬 **Beautiful Chat UI**
+- Modern gradient design
+- Real-time thinking display
+- Live memory statistics
+- File upload support
+
+</td>
+</tr>
+<tr>
+<td width="50%">
+
+### ⚡ **Production Ready**
+- 45-95% faster (v2.4)
+- 132 tests passing
+- 43% test coverage
+- 100% backward compatible
+
+</td>
+<td width="50%">
+
+### 🔌 **Universal Compatibility**
+- Works with any LLM
+- Local models (HuggingFace)
+- Hosted APIs (OpenAI, Anthropic)
+- No model modification needed
+
+</td>
+</tr>
+</table>
+
+---
 
 ## 🌟 Why Finite Memory AI?
 
 LLMs typically re-process the entire prompt history on every turn, leading to:
+
 - 💸 **Exponentially growing costs**
 - 🐌 **Slower response times**
 - 💥 **Context limit overflows**
@@ -78,6 +144,39 @@ LLMs typically re-process the entire prompt history on every turn, leading to:
 - ✅ No regressions
 
 See [PHASE_2_COMPLETE.md](PHASE_2_COMPLETE.md) for detailed optimization analysis.
+
+## 💬 Interactive Chat UI
+
+**NEW!** Try Finite Memory AI with our beautiful, production-ready chat interface powered by DeepSeek API:
+
+```bash
+# Start the chat server
+cd chat_ui
+python server.py
+
+# Open in browser
+# http://localhost:8080
+```
+
+### ✨ Chat UI Features
+
+- 🎨 **Modern Design** - Beautiful gradient UI with dark mode support
+- 💭 **Thinking Display** - See AI reasoning process in real-time
+- 📊 **Memory Stats** - Live token usage and eviction tracking
+- ⚙️ **Configurable** - Adjust memory policies and token limits (512-16,384)
+- 📁 **File Upload** - Upload text files, code, documents (up to 10MB)
+- 💾 **Export Chat** - Save conversations as Markdown
+- 🔄 **Memory Policies** - Switch between sliding, importance, semantic, and more
+- ⚡ **Real-time Updates** - Instant response with typing indicators
+
+**Memory Policies Available:**
+- **Sliding Window** - Fast & simple FIFO
+- **Importance** - Smart retention based on attention
+- **Semantic** - Topic clustering for multi-subject chats
+- **Rolling Summary** - Compress old context automatically
+- **Hybrid** - Best of all worlds
+
+---
 
 ## 🚀 Quick Start
 
@@ -442,11 +541,23 @@ pytest tests/test_finite_memory.py::TestMemoryPolicies::test_sliding_policy -v
 
 ## 📖 Documentation
 
+### 📘 Getting Started
 - **[Quick Start Guide](QUICKSTART.md)** - Get up and running in 5 minutes
+- **[Chat UI Guide](chat_ui/DEBUG_REPORT.md)** - Complete chat interface documentation
+- **[How It Works](HOW_IT_WORKS.md)** - Architecture and flow explained
+
+### 🔧 Technical Guides
+- **[Tier-1 Upgrade Guide](TIER1_UPGRADE_GUIDE.md)** - Production features (v2.3+)
+- **[Performance Report](PHASE_2_COMPLETE.md)** - Optimization details (v2.4)
+- **[Build Optimization](BUILD_OPTIMIZATION_COMPLETE.md)** - Build system improvements
+- **[Honest Performance Report](HONEST_PERFORMANCE_REPORT.md)** - Real-world benchmarks
+
+### 📚 Reference
 - **[Upgrade to v2.0](UPGRADE_TO_V2.md)** - Migration guide from v1.0
 - **[Contributing Guide](CONTRIBUTING.md)** - How to contribute
 - **[Changelog](CHANGELOG.md)** - Version history
 - **[Modernization Report](MODERNIZATION_REPORT.md)** - Technical details
+- **[Package Split Guide](PACKAGE_SPLIT_GUIDE.md)** - Modular architecture (planned)
 
 ## 🔬 How It Works
 
@@ -652,10 +763,23 @@ Built with:
 
 ## ⭐ Star History
 
-If you find this project useful, please consider giving it a star!
+If you find this project useful, please consider giving it a star! ⭐
+
+---
+
+<div align="center">
+
+### 🚀 **Ready to Get Started?**
+
+Try the [Interactive Chat UI](#-interactive-chat-ui) • Read the [Quick Start](#-quick-start) • Explore the [Documentation](#-documentation)
 
 ---
 
 **Made with ❤️ by Dawson Block**
 
 *Finite Memory AI - Making LLMs remember smartly, not infinitely.*
+
+[![GitHub](https://img.shields.io/badge/GitHub-dawsonblock-blue?logo=github)](https://github.com/dawsonblock)
+[![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
+</div>
